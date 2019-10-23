@@ -19,7 +19,7 @@ Goals:
 
 
 class BITMeasurement():
-    def __init__(self, image_files = None, flat_files = None, dark_files = None):
+    def __init__(self, image_files = None, flat_files = None, dark_files = None, bias_files= None):
         '''
         :image_files: Python List of image filenames; must be complete relative or absolute path.
         :flat_files: Python List of image filenames; must be complete relative or absolute path.
@@ -29,6 +29,60 @@ class BITMeasurement():
         self.image_files = image_files
         self.flat_files = flat_files
         self.dark_files = dark_files
+
+    def _add_wcs_to_science_frames(self,):
+        '''
+        looks for wcs files, constucting path and filenames from self.wcs_path and self.image_files.
+        Makes new image .fits files with proper wcs information. Possibly replaces self.image_files with the updated image filenames?
+        '''
+        pass
+
+    def self.set_path_to_calib_data(self,path=None):
+        if path is None:
+            self.calib_path = '../Data/calib'
+
+    def self.set_path_to_science_data(self,path=None):
+        if path is None:
+            self.science_path = '../Data/timmins2019/raw'
+
+    def self.set_path_to_science_data(self,path=None):
+        if path is None:
+            self.wcs_path = '../Data/timmins2019/raw'
+
+
+
+    def reduce(self):
+        # Read in and average together the bias, dark, and flat frames.
+
+        nbias = 0
+        for ibias_file in self.bias_files:
+            if nbias == 0:
+                bias_frame = fitsio.read(ibias_file)
+            else:
+                bias_frame = bias_frame + fitsio.read(ibias_file)
+            nbias = nbias+1
+        bias_frame = bias_frame * 1./nbias
+
+        ndark = 0
+        for idark_file in self.dark_files:
+            hdr = fitsio.read_header(idark_file)
+            time = header['EXPTIME'] / 1000. # exopsure time, seconds
+            if ndark == 0:
+                master_dark = (fitsio.read(idark_file) - bias_frame)*1./time
+            else:
+                master_dark = master_dark + (fitsio.read(idark_file) - bias_frame) * 1./time
+        master_dark = master_dark * 1./ndarj
+
+        nflat = 0
+        for iflat_file in self.flat_files:
+            hdr = fitsio.read_header(iflat_file)
+            time = header['EXPTIME'] /  1000.
+            if nflat = 0:
+                master_flat = (fitsio.read(iflat_file) - bias_frame) * 1./time
+            else:
+                master_flat = master_flat + (fitsio.read(iflat_file) - bias_frame) * 1./time
+        master_flat = master_flat*1./nflat
+
 
 
     def make_mask(self, column_dark_thresh = None, global_dark_thresh = None, global_flat_thresh = None):
@@ -169,6 +223,13 @@ class BITMeasurement():
 
     def run(self,outfile = "superbit.meds"):
 
+        # Set up the paths to the science and calibration data.
+        self.set_path_to_calib_data()
+        self.set_path_to_calib_data()
+        # Add a WCS to the science
+        self._add_wcs_to_science_frames()
+        # Reduce the data.
+        self.reduce()
         # Make a mask.
         self.make_mask()
         # Combine images, make a catalog.
