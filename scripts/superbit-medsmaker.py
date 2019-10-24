@@ -96,8 +96,9 @@ def _make_new_fits(self,image_filename):
     def self.set_path_to_science_data(self,path=None):
         if path is None:
             self.science_path = '../Data/timmins2019/raw'
+            self.reduced_science_path = '../Data/timmins2019/reduced'
 
-    def self.set_path_to_science_data(self,path=None):
+    def self.set_path_to_wcs_data(self,path=None):
         if path is None:
             self.wcs_path = '../Data/timmins2019/raw'
 
@@ -138,8 +139,16 @@ def _make_new_fits(self,image_filename):
             # step through and calibrate each image.
             # Write calibrated images to disk.
             # Be sure to preserve headers.
+            # WARNING: as written, function assumes science data is in 0th extension
             this_image_fits=fits.read(this_image_file)
-            this_reduced_image = (this_image_fits - master_bias)
+            time=this_image_fits[0].header['EXPTIME']
+            this_reduced_image = (this_image_fits[0].data - master_bias)-(master_dark*time)
+            this_reduced_image = this_reduced_image/master_flat
+            # write processed image to file
+            updated_header = this_image_fits[0].header
+            updated_header['HISTORY']='File has been bias & dark subtracted and FF corrected'
+            this_image_outname = os.path.join(self.reduced_science_path,clusterName.replace(".fits","_reduced.fits"))
+
 
 
     def make_mask(self, column_dark_thresh = None, global_dark_thresh = None, global_flat_thresh = None):
@@ -166,7 +175,7 @@ def _make_new_fits(self,image_filename):
 
         self.mask_file = None
 
-   def _make_detection_image(self, output = 'detection.fits'):
+   def _make_detection_image(self,outfile_name = 'detection.fits'):
        '''
        :output: output file where detection image is written.
 
@@ -175,21 +184,21 @@ def _make_new_fits(self,image_filename):
        ### Code to run SWARP
        image_args = ' '.join(self.image_files)
        config_arg = '-c astro_config/swarp.config'
-       self.detection_file = os.path.join(self.work_path,'detection.fits')
-       cmd = ' '.join(['swarp',image_args,config_arg])
+       outfile_arg = '-IMAGEOUT_NAME '+'outfile_name'
+       detection_file = os.path.join(self.work_path,outfile_name)
+       cmd = ' '.join(['swarp',image_args,config_arg,outfile_arg])
+       os.system(cmd)
+       return detection_file
 
 
     def make_catalog(self, sextractor_config_file = './astro_config/sextractor.config', sextractor_param_file = './astro_config/sextractor.param',psfex_config_file = './astro_config/'):
         '''
         Wrapper for astromatic tools to make catalog from provided images.
         '''
-        self._make_detection_image()
-        cmd = 'swarp '+' '.join(image_files)
-
-        sxcmd = ' '.join(['sex',image_file,'-c','astro_config/sextractor.config'])
+        detection_file = self._make_detection_image()
+        cmd = ' '.join(['sex',detection_file,'-c','astro_config/sextractor.config'])
         os.system(cmd)
-
-        pass
+        self.catalog = fitsio.read('catalog.fits',ext=2)
 
     def _select_stars_for_psf(self,stars_file = None):
         '''
@@ -269,7 +278,7 @@ def _make_new_fits(self,image_filename):
 
     def make_object_info_struct(self,catalog=None):
 		if catalog is None:
-			raise Exception("A catalog object is required to create MEDS files.")
+			catalog = self.catalog
 
 		obj_str = meds.util.get_meds_input_struct(catalog.size,extra_fields = [('KRON_RADIUS',np.float)])
 		obj_str['id'] = catalog['NUMBER']
