@@ -4,6 +4,9 @@ import meds
 import os
 import psfex
 from astropy.io import fits
+import string
+import pdb
+from astropy import wcs
 '''
 Goals:
   - Take as input calibrated images
@@ -38,13 +41,13 @@ class BITMeasurement():
         try:
             # os.path.basename gets the filename if a full path gets supplied
             basename = os.path.basename(image_filename)
-            splitted=string.split(basename,'_')
+            splitted=basename.split('_')
             wcsName=os.path.join(self.wcs_path,str('wcs_'+splitted[2]+'_'+splitted[3]+'.fits'))
             inhead=fits.getheader(wcsName)
             w=wcs.WCS(inhead)
             wcs_sip_header=w.to_header(relax=True)
         except:
-            print('cluster %s has no WCS, skipping...' %clusterName)
+            print('cluster %s has no WCS, skipping...' % wcsName )
             wcs_sip_header=None
 
         return wcs_sip_header
@@ -56,50 +59,60 @@ class BITMeasurement():
         List of KW can probably be changed as needed
         '''
         if os.path.exists(image_filename):
-            ClusterFITSFile=fits.open(clusterFITSName)
+            ClusterFITSFile=fits.open(image_filename)
             ClusterHeader=ClusterFITSFile[0].header
             WCSheader=self._get_wcs_info(image_filename)
             if WCSheader is not None:
                 for key in WCSheader.keys():
                     ClusterHeader[key]=WCSheader[key]
-                #print "I get here 4"
                 outFITS=fits.PrimaryHDU(ClusterFITSFile[0].data,header=ClusterHeader)
-                new_image_filename = os.path.join(self.science_path,clusterName.replace(".fits","WCS.fits"))
+                new_image_filename = os.path.join(self.science_path,image_filename.replace(".fits","WCS.fits"))
                 outFITS.writeto(new_image_filename)
-            return new_image_filename
+                return new_image_filename
         else:
+            print("Could not process %s" % image_filename)
             return None
 
-    def _add_wcs_to_science_frames(self):
+    def add_wcs_to_science_frames(self):
         '''
         looks for wcs files, constucting path and filenames from self.wcs_path and self.image_files.
         Makes new image .fits files with proper wcs information. Possibly replaces self.image_files with the updated image filenames?
         '''
         fixed_image_files = []
         for image_file in self.image_files:
-            fixed_image_file = self.make_new_fits(image_file)
+            fixed_image_file = self._make_new_fits(image_file)
             if fixed_image_file is not None:
                 fixed_image_files.append(fixed_image_file)
         self.image_files = fixed_image_files
 
     def set_working_dir(self,path=None):
         if path is None:
-            if ~os.path.exists('./tmp'):
-                os.mkdir('./tmp')
             self.work_path = './tmp'
+        else:
+            self.work_path = path
+        if ~os.path.exists(self.work_path):
+            os.mkdir(self.work_path)
+
 
     def set_path_to_calib_data(self,path=None):
         if path is None:
             self.calib_path = '../Data/calib'
+        else:
+            self.calib_path = path
 
     def set_path_to_science_data(self,path=None):
         if path is None:
             self.science_path = '../Data/timmins2019/raw'
             self.reduced_science_path = '../Data/timmins2019/reduced'
+        else:
+            self.science_path = path
+            self.reduced_science_path = path
 
     def set_path_to_wcs_data(self,path=None):
         if path is None:
             self.wcs_path = '../Data/timmins2019/raw'
+        else:
+            self.wcs_path = path
 
 
     def reduce(self):
@@ -316,7 +329,8 @@ class BITMeasurement():
         self.set_path_to_calib_data()
         self.set_path_to_science_data()
         # Add a WCS to the science
-        self._add_wcs_to_science_frames()
+        self.set_path_to_wcs_data()
+        self.add_wcs_to_science_frames()
         # Reduce the data.
         self.reduce()
         # Make a mask.
