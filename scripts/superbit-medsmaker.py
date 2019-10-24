@@ -113,6 +113,7 @@ def _make_new_fits(self,image_filename):
                 bias_frame = bias_frame + fitsio.read(ibias_file)
             nbias = nbias+1
         master_bias = bias_frame * 1./nbias
+        fitsio.write(os.path.join(self.calib_path,'master_bias.fits'),master_bias)
 
         ndark = 0
         for idark_file in self.dark_files:
@@ -123,6 +124,7 @@ def _make_new_fits(self,image_filename):
             else:
                 master_dark = master_dark + (fitsio.read(idark_file) - bias_frame) * 1./time
         master_dark = master_dark * 1./ndark
+        fitsio.write(os.path.join(self.calib_path,'master_dark.fits'),master_dark)
 
         nflat = 0
         for iflat_file in self.flat_files:
@@ -134,6 +136,7 @@ def _make_new_fits(self,image_filename):
                 master_flat = master_flat + (fitsio.read(iflat_file) - bias_frame - master_dark * time) * 1./time
         master_flat = master_flat*1./nflat
         master_flat = master_flat/np.median(master_flat)
+        fitsio.write(os.path.join(self.calib_path,'master_dark.fits'),master_flat)
 
         reduced_image_files=[]
         for this_image_file in self.image_files:
@@ -161,7 +164,7 @@ def _make_new_fits(self,image_filename):
         '''
 
         try:
-            dark
+            mdark = fits.open()
 
         med_flat_array=[]
         med_dark_array=[]
