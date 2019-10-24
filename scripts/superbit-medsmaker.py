@@ -30,12 +30,64 @@ class BITMeasurement():
         self.flat_files = flat_files
         self.dark_files = dark_files
 
-    def _add_wcs_to_science_frames(self,):
+def _get_wcs_info(self,image_filename):
+    '''
+    Return a new image header with WCS (SIP) information,
+    or nothing if the WCS file doesn't exist
+    '''
+    try:
+        # os.path.basename gets the filename if a full path gets supplied
+        basename = os.path.basename(image_filename)
+        splitted=string.split(basename,'_')
+        wcsName=os.path.join(self.wcs_path,str('wcs_'+splitted[2]+'_'+splitted[3]+'.fits'))
+        inhead=fits.getheader(wcsName)
+        w=wcs.WCS(inhead)
+        wcs_sip_header=w.to_header(relax=True)
+    except:
+        print('cluster %s has no WCS, skipping...'%clusterName)
+        #pdb.set_trace()
+        wcs_sip_header=None
+    return wcs_sip_header
+
+def _make_new_fits(self,image_filename):
+    '''
+    Returns new cluster fits file with the
+    updated WCS and some important keywords
+    List of KW can probably be changed as needed
+    '''
+    #print "I get here 1"
+    if os.path.exists(image_filename):
+        ClusterFITSFile=fits.open(clusterFITSName)
+        ClusterHeader=ClusterFITSFile[0].header
+        WCSheader=self._get_wcs_info(image_filename)
+        if WCSheader is not None:
+            for key in WCSheader.keys():
+                ClusterHeader[key]=WCSheader[key]
+            #print "I get here 4"
+            outFITS=fits.PrimaryHDU(ClusterFITSFile[0].data,header=ClusterHeader)
+            new_image_filename = os.path.join(self.science_path,clusterName.replace(".fits","WCS.fits"))
+            outFITS.writeto(new_image_filename))
+        return new_image_filename
+    else:
+        return None
+
+    def _add_wcs_to_science_frames(self):
         '''
         looks for wcs files, constucting path and filenames from self.wcs_path and self.image_files.
         Makes new image .fits files with proper wcs information. Possibly replaces self.image_files with the updated image filenames?
         '''
-        pass
+        fixed_image_files = []
+        for image_file in self.image_files:
+            fixed_image_file = self.make_new_fits(image_file)
+            if fixed_image_file is not None:
+                fixed_image_files.append(fixed_image_file)
+        self.image_files = fixed_image_files
+
+    def self.set_working_dir(self,path=None):
+        if path is None:
+            if ~os.path.exists('./tmp')
+                os.mkdir('./tmp')
+            self.work_path = './tmp'
 
     def self.set_path_to_calib_data(self,path=None):
         if path is None:
@@ -50,7 +102,6 @@ class BITMeasurement():
             self.wcs_path = '../Data/timmins2019/raw'
 
 
-
     def reduce(self):
         # Read in and average together the bias, dark, and flat frames.
 
@@ -61,7 +112,7 @@ class BITMeasurement():
             else:
                 bias_frame = bias_frame + fitsio.read(ibias_file)
             nbias = nbias+1
-        bias_frame = bias_frame * 1./nbias
+        master_bias = bias_frame * 1./nbias
 
         ndark = 0
         for idark_file in self.dark_files:
@@ -71,18 +122,24 @@ class BITMeasurement():
                 master_dark = (fitsio.read(idark_file) - bias_frame)*1./time
             else:
                 master_dark = master_dark + (fitsio.read(idark_file) - bias_frame) * 1./time
-        master_dark = master_dark * 1./ndarj
+        master_dark = master_dark * 1./ndark
 
         nflat = 0
         for iflat_file in self.flat_files:
             hdr = fitsio.read_header(iflat_file)
             time = header['EXPTIME'] /  1000.
             if nflat = 0:
-                master_flat = (fitsio.read(iflat_file) - bias_frame) * 1./time
+                master_flat = (fitsio.read(iflat_file) - bias_frame - master_dark * time ) * 1./time
             else:
-                master_flat = master_flat + (fitsio.read(iflat_file) - bias_frame) * 1./time
+                master_flat = master_flat + (fitsio.read(iflat_file) - bias_frame - master_dark * time) * 1./time
         master_flat = master_flat*1./nflat
 
+        for this_image_file in self.image_files:
+            # step through and calibrate each image.
+            # Write calibrated images to disk.
+            # Be sure to preserve headers.
+            this_image_fits=fits.read(this_image_file)
+            this_reduced_image = (this_image_fits - master_bias)
 
 
     def make_mask(self, column_dark_thresh = None, global_dark_thresh = None, global_flat_thresh = None):
@@ -116,8 +173,10 @@ class BITMeasurement():
        Runs SWarp on provided image files to make a detection image.
        '''
        ### Code to run SWARP
-
-       self.detection_file = output
+       image_args = ' '.join(self.image_files)
+       config_arg = '-c astro_config/swarp.config'
+       self.detection_file = os.path.join(self.work_path,'detection.fits')
+       cmd = ' '.join(['swarp',image_args,config_arg])
 
 
     def make_catalog(self, sextractor_config_file = './astro_config/sextractor.config', sextractor_param_file = './astro_config/sextractor.param',psfex_config_file = './astro_config/'):
