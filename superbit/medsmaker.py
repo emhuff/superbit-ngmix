@@ -104,7 +104,6 @@ def _make_new_fits(self,image_filename):
 
     def reduce(self):
         # Read in and average together the bias, dark, and flat frames.
-        self.reduced_image_files=[] # for now, this is just ~names~ of reduced images
 
         nbias = 0
         for ibias_file in self.bias_files:
@@ -114,6 +113,7 @@ def _make_new_fits(self,image_filename):
                 bias_frame = bias_frame + fitsio.read(ibias_file)
             nbias = nbias+1
         master_bias = bias_frame * 1./nbias
+        fitsio.write(os.path.join(self.calib_path,'master_bias.fits'),master_bias)
 
         ndark = 0
         for idark_file in self.dark_files:
@@ -124,6 +124,7 @@ def _make_new_fits(self,image_filename):
             else:
                 master_dark = master_dark + (fitsio.read(idark_file) - bias_frame) * 1./time
         master_dark = master_dark * 1./ndark
+        fitsio.write(os.path.join(self.calib_path,'master_dark.fits'),master_dark)
 
         nflat = 0
         for iflat_file in self.flat_files:
@@ -135,7 +136,9 @@ def _make_new_fits(self,image_filename):
                 master_flat = master_flat + (fitsio.read(iflat_file) - bias_frame - master_dark * time) * 1./time
         master_flat = master_flat*1./nflat
         master_flat = master_flat/np.median(master_flat)
+        fitsio.write(os.path.join(self.calib_path,'master_dark.fits'),master_flat)
 
+        reduced_image_files=[]
         for this_image_file in self.image_files:
             # step through and calibrate each image.
             # Write calibrated images to disk.
@@ -146,16 +149,23 @@ def _make_new_fits(self,image_filename):
             this_reduced_image = this_reduced_image/master_flat
             updated_header = this_image_fits[0].header
             updated_header['HISTORY']='File has been bias & dark subtracted and FF corrected'
-            # write processed image to file
             this_image_outname = os.path.join(self.reduced_science_path,this_image_file.replace(".fits","_reduced.fits"))
-            self.reduced_image_files.append(this_image_outname)
+            reduced_image_files.append(this_image_outname)
             this_outfits=fits.PrimaryHDU(this_reduced_image,header=updated_header)
             this_outfits.writeto(this_image_outname)
-        
+        self.image_files=reduced_image_files
+
 
     def make_mask(self, column_dark_thresh = None, global_dark_thresh = None, global_flat_thresh = None):
         # Use the flats and darks to generate a bad pixel mask.
-        # make use of np.ravel/np.reshape for this
+        '''
+        Either read in master dark from file, or pass as an attribute of self()
+        Ibid for flat
+        '''
+
+        try:
+            mdark = fits.open()
+
         med_flat_array=[]
         med_dark_array=[]
         for d in self.dark_files:
@@ -181,9 +191,12 @@ def _make_new_fits(self,image_filename):
        '''
        :output: output file where detection image is written.
 
-       Runs SWarp on provided image files to make a detection image.
+       Runs SWarp on provided (reduced!) image files to make a coadd image
+       for SEX and PSFEx detection.
+
        '''
        ### Code to run SWARP
+
        image_args = ' '.join(self.image_files)
        config_arg = '-c astro_config/swarp.config'
        outfile_arg = '-IMAGEOUT_NAME '+'outfile_name'
@@ -193,43 +206,47 @@ def _make_new_fits(self,image_filename):
        return detection_file
 
 
-    def make_catalog(self, sextractor_config_file = './astro_config/sextractor.config', sextractor_param_file = './astro_config/sextractor.param',psfex_config_file = './astro_config/'):
+    def make_catalog(self, sextractor_config_file = './astro_config/sextractor.config', sextractor_param_file = './astro_config/sextractor.param'):
         '''
         Wrapper for astromatic tools to make catalog from provided images.
+        This returns catalog for (stacked) detection image
         '''
         detection_file = self._make_detection_image()
         cmd = ' '.join(['sex',detection_file,'-c','astro_config/sextractor.config'])
         os.system(cmd)
         self.catalog = fitsio.read('catalog.fits',ext=2)
 
-    #def _select_stars_for_psf(self,stars_file = None):
-    #    '''
-    #    select stars from self.catalog using a sensible s/g separation criterion.
-    #    write these stars to disk so PSFEx can use them.
-    #    '''
-    #
-    #    self.stars_file = None
-    #    pass
-
-    def _make_psf_model(self,imagefile):
-        '''
-        Wrapper for PSFEx. Requires a FITS-LDAC format catalog with vignettes
-        '''
-        imagefile_cat=self.
-
-        return psfex_model_file
-
     def make_psf_models(self):
         #self.select_stars_for_psf() # not necessary, psfex does its own selection
         self.psfEx_models = []
-        for image_file in self.image_files:
-            psfex_model_file = self._make_psf_model(image)
-            self.psfEx_models.append( psfex.PSFEx(psfex_model_file))
+
+        for imagefile in self.image_files:
+            psfex_model_file = self._make_psf_model(imagefile)
+            self.psfEx_models.append(psfex.PSFEx(psfex_model_file))
+
+    def _make_psf_model(self,imagefile,sextractor_config_file = './astro_config/sextractor.config', sextractor_param_file = './astro_config/sextractor.param',psfex_config_file = './astro_config/psfex.config'):
+        '''
+        Gets called by make_psf_models for every image in self.image_files
+        Wrapper for PSFEx. Requires a FITS-LDAC format catalog with vignettes
+        '''
+        # First, run SExtractor.
+        # Hopefully imagefile is an absolute path!
+        psfcat_name=imagefile.replace('.fits','_cat.ldac')
+        cmd = ' '.join(['sex',imagefile,'-c','astro_config/sextractor.config','-CATALOG_NAME ',outcatname])
+        os.system(cmd)
+        # Now run PSFEx on that image and accompanying catalog
+        cmd = ' '.join('psfex', psfcat_name,'-c','astro_config/psfex.config','-PSFVAR_DEGREES','5')
+        psfex_model_file=imagefile.replace('.fits','.psf')
+        # Just return name, the make_psf_models method reads it in as a PSFEx object
+        return psfex_model_file
+
 
 
      def make_image_info_struct(self,max_len_of_filepath = 120):
-
+         # max_len_of_filepath may cause issues down the line if the file path
+         # is particularly long
          image_info = meds.util.get_image_info_struct(len(self.image_files),max_len_of_filepath)
+        # When does i get defined?
          for image_file in self.image_files:
 			image_info[i]['image_path'] = image_file
 			image_info[i]['image_ext'] = 0
