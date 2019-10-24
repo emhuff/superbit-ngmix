@@ -155,7 +155,14 @@ def _make_new_fits(self,image_filename):
 
     def make_mask(self, column_dark_thresh = None, global_dark_thresh = None, global_flat_thresh = None):
         # Use the flats and darks to generate a bad pixel mask.
-        # make use of np.ravel/np.reshape for this
+        '''
+        Either read in master dark from file, or pass as an attribute of self()
+        Ibid for flat
+        '''
+
+        try:
+            dark
+
         med_flat_array=[]
         med_dark_array=[]
         for d in self.dark_files:
