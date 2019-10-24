@@ -55,7 +55,6 @@ def _make_new_fits(self,image_filename):
     updated WCS and some important keywords
     List of KW can probably be changed as needed
     '''
-    #print "I get here 1"
     if os.path.exists(image_filename):
         ClusterFITSFile=fits.open(clusterFITSName)
         ClusterHeader=ClusterFITSFile[0].header
@@ -105,6 +104,7 @@ def _make_new_fits(self,image_filename):
 
     def reduce(self):
         # Read in and average together the bias, dark, and flat frames.
+        self.reduced_image_files=[] # for now, this is just ~names~ of reduced images
 
         nbias = 0
         for ibias_file in self.bias_files:
@@ -134,22 +134,24 @@ def _make_new_fits(self,image_filename):
             else:
                 master_flat = master_flat + (fitsio.read(iflat_file) - bias_frame - master_dark * time) * 1./time
         master_flat = master_flat*1./nflat
+        master_flat = master_flat/np.median(master_flat)
 
         for this_image_file in self.image_files:
             # step through and calibrate each image.
             # Write calibrated images to disk.
-            # Be sure to preserve headers.
             # WARNING: as written, function assumes science data is in 0th extension
             this_image_fits=fits.read(this_image_file)
             time=this_image_fits[0].header['EXPTIME']
             this_reduced_image = (this_image_fits[0].data - master_bias)-(master_dark*time)
             this_reduced_image = this_reduced_image/master_flat
-            # write processed image to file
             updated_header = this_image_fits[0].header
             updated_header['HISTORY']='File has been bias & dark subtracted and FF corrected'
-            this_image_outname = os.path.join(self.reduced_science_path,clusterName.replace(".fits","_reduced.fits"))
-
-
+            # write processed image to file
+            this_image_outname = os.path.join(self.reduced_science_path,this_image_file.replace(".fits","_reduced.fits"))
+            self.reduced_image_files.append(this_image_outname)
+            this_outfits=fits.PrimaryHDU(this_reduced_image,header=updated_header)
+            this_outfits.writeto(this_image_outname)
+        
 
     def make_mask(self, column_dark_thresh = None, global_dark_thresh = None, global_flat_thresh = None):
         # Use the flats and darks to generate a bad pixel mask.
@@ -200,28 +202,30 @@ def _make_new_fits(self,image_filename):
         os.system(cmd)
         self.catalog = fitsio.read('catalog.fits',ext=2)
 
-    def _select_stars_for_psf(self,stars_file = None):
-        '''
-        select stars from self.catalog using a sensible s/g separation criterion.
-        write these stars to disk so PSFEx can use them.
-        '''
-
-        self.stars_file = None
-        pass
+    #def _select_stars_for_psf(self,stars_file = None):
+    #    '''
+    #    select stars from self.catalog using a sensible s/g separation criterion.
+    #    write these stars to disk so PSFEx can use them.
+    #    '''
+    #
+    #    self.stars_file = None
+    #    pass
 
     def _make_psf_model(self,imagefile):
         '''
-        Wrapper for PSFEx. Assumes stars have already been selected, and are in the .fits file self.stars_file
+        Wrapper for PSFEx. Requires a FITS-LDAC format catalog with vignettes
         '''
+        imagefile_cat=self.
 
         return psfex_model_file
 
     def make_psf_models(self):
-        self.select_stars_for_psf() # this writes a star catalog file
+        #self.select_stars_for_psf() # not necessary, psfex does its own selection
         self.psfEx_models = []
         for image_file in self.image_files:
             psfex_model_file = self._make_psf_model(image)
             self.psfEx_models.append( psfex.PSFEx(psfex_model_file))
+
 
      def make_image_info_struct(self,max_len_of_filepath = 120):
 
@@ -293,7 +297,7 @@ def _make_new_fits(self,image_filename):
 
         # Set up the paths to the science and calibration data.
         self.set_path_to_calib_data()
-        self.set_path_to_calib_data()
+        self.set_path_to_science_data()
         # Add a WCS to the science
         self._add_wcs_to_science_frames()
         # Reduce the data.
