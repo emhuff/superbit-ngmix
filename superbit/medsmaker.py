@@ -7,6 +7,7 @@ from astropy.io import fits
 import string
 import pdb
 from astropy import wcs
+import fitsio
 '''
 Goals:
   - Take as input calibrated images
@@ -32,6 +33,7 @@ class BITMeasurement():
         self.image_files = image_files
         self.flat_files = flat_files
         self.dark_files = dark_files
+        self.bias_files = bias_files
 
     def _get_wcs_info(self,image_filename):
         '''
@@ -131,22 +133,25 @@ class BITMeasurement():
         ndark = 0
         for idark_file in self.dark_files:
             hdr = fitsio.read_header(idark_file)
-            time = header['EXPTIME'] / 1000. # exopsure time, seconds
+            time = hdr['EXPTIME'] / 1000. # exopsure time, seconds
             if ndark == 0:
                 master_dark = (fitsio.read(idark_file) - bias_frame)*1./time
             else:
                 master_dark = master_dark + (fitsio.read(idark_file) - bias_frame) * 1./time
+            ndark = ndark+1
         master_dark = master_dark * 1./ndark
         fitsio.write(os.path.join(self.calib_path,'master_dark.fits'),master_dark)
 
         nflat = 0
         for iflat_file in self.flat_files:
             hdr = fitsio.read_header(iflat_file)
-            time = header['EXPTIME'] /  1000.
+            time = hdr['EXPTIME'] /  1000.
             if nflat == 0:
-                master_flat = (fitsio.read(iflat_file) - bias_frame - master_dark * time ) * 1./time
+                master_flat = (fitsio.read(iflat_file) - master_bias - master_dark * time ) * 1./time
             else:
-                master_flat = master_flat + (fitsio.read(iflat_file) - bias_frame - master_dark * time) * 1./time
+
+                master_flat = master_flat + (fitsio.read(iflat_file) - master_bias - master_dark * time) * 1./time
+            nflat = nflat+1
         master_flat = master_flat*1./nflat
         master_flat = master_flat/np.median(master_flat)
         fitsio.write(os.path.join(self.calib_path,'master_dark.fits'),master_flat)
