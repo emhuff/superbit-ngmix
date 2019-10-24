@@ -151,7 +151,7 @@ def _make_new_fits(self,image_filename):
             self.reduced_image_files.append(this_image_outname)
             this_outfits=fits.PrimaryHDU(this_reduced_image,header=updated_header)
             this_outfits.writeto(this_image_outname)
-        
+
 
     def make_mask(self, column_dark_thresh = None, global_dark_thresh = None, global_flat_thresh = None):
         # Use the flats and darks to generate a bad pixel mask.
@@ -181,10 +181,15 @@ def _make_new_fits(self,image_filename):
        '''
        :output: output file where detection image is written.
 
-       Runs SWarp on provided image files to make a detection image.
+       Runs SWarp on provided (reduced!) image files to make a coadd image
+       for SEX and PSFEx detection.
+
        '''
        ### Code to run SWARP
-       image_args = ' '.join(self.image_files)
+       if self.reduced_image_files not None:
+           image_args = ' '.join(self.image_files)
+       else:
+           image_args = ' '.join(self.reduced_image_files)
        config_arg = '-c astro_config/swarp.config'
        outfile_arg = '-IMAGEOUT_NAME '+'outfile_name'
        detection_file = os.path.join(self.work_path,outfile_name)
@@ -193,7 +198,7 @@ def _make_new_fits(self,image_filename):
        return detection_file
 
 
-    def make_catalog(self, sextractor_config_file = './astro_config/sextractor.config', sextractor_param_file = './astro_config/sextractor.param',psfex_config_file = './astro_config/'):
+    def make_catalog(self, sextractor_config_file = './astro_config/sextractor.config', sextractor_param_file = './astro_config/sextractor.param'):
         '''
         Wrapper for astromatic tools to make catalog from provided images.
         '''
@@ -202,29 +207,36 @@ def _make_new_fits(self,image_filename):
         os.system(cmd)
         self.catalog = fitsio.read('catalog.fits',ext=2)
 
-    #def _select_stars_for_psf(self,stars_file = None):
-    #    '''
-    #    select stars from self.catalog using a sensible s/g separation criterion.
-    #    write these stars to disk so PSFEx can use them.
-    #    '''
-    #
-    #    self.stars_file = None
-    #    pass
-
-    def _make_psf_model(self,imagefile):
-        '''
-        Wrapper for PSFEx. Requires a FITS-LDAC format catalog with vignettes
-        '''
-        imagefile_cat=self.
-
-        return psfex_model_file
-
     def make_psf_models(self):
         #self.select_stars_for_psf() # not necessary, psfex does its own selection
         self.psfEx_models = []
-        for image_file in self.image_files:
-            psfex_model_file = self._make_psf_model(image)
+        if self.reduced_image_files is not None:
+            image_files = self.reduced_image_files
+        else:
+            image_files=self.image_files
+
+        for imagefile in image_files:
+            psfex_model_file = self._make_psf_model(imagefile)
             self.psfEx_models.append( psfex.PSFEx(psfex_model_file))
+
+    def _make_psf_model(self,imagefile,sextractor_config_file = './astro_config/sextractor.config', sextractor_param_file = './astro_config/sextractor.param',psfex_config_file = './astro_config/psfex.config'):
+        '''
+        Gets called by make_psf_models for every image in self.image_files
+        Wrapper for PSFEx. Requires a FITS-LDAC format catalog with vignettes
+        '''
+        # First, run SExtractor.
+        # Hopefully imagefile is an absolute path!
+        outcatname=imagefile.replace('.fits','_cat.ldac')
+        cmd = ' '.join(['sex',imagefile,'-c','astro_config/sextractor.config','-CATALOG_NAME ',outcatname])
+        os.system(cmd)
+        self.catalog = fitsio.read(outcatname,ext=2)
+        # Now run PSFEx on that image and accompanying catalog
+        '''
+        OK, need to fill in commands here
+        '''
+        psfex_model_file=fitsio.read(psfname) # I think it's a FITS file?
+        return psfex_model_file
+
 
 
      def make_image_info_struct(self,max_len_of_filepath = 120):
