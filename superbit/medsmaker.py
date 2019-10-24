@@ -30,45 +30,45 @@ class BITMeasurement():
         self.flat_files = flat_files
         self.dark_files = dark_files
 
-def _get_wcs_info(self,image_filename):
-    '''
-    Return a new image header with WCS (SIP) information,
-    or nothing if the WCS file doesn't exist
-    '''
-    try:
-        # os.path.basename gets the filename if a full path gets supplied
-        basename = os.path.basename(image_filename)
-        splitted=string.split(basename,'_')
-        wcsName=os.path.join(self.wcs_path,str('wcs_'+splitted[2]+'_'+splitted[3]+'.fits'))
-        inhead=fits.getheader(wcsName)
-        w=wcs.WCS(inhead)
-        wcs_sip_header=w.to_header(relax=True)
-    except:
-        print('cluster %s has no WCS, skipping...'%clusterName)
-        #pdb.set_trace()
-        wcs_sip_header=None
-    return wcs_sip_header
+    def _get_wcs_info(self,image_filename):
+        '''
+        Return a new image header with WCS (SIP) information,
+        or nothing if the WCS file doesn't exist
+        '''
+        try:
+            # os.path.basename gets the filename if a full path gets supplied
+            basename = os.path.basename(image_filename)
+            splitted=string.split(basename,'_')
+            wcsName=os.path.join(self.wcs_path,str('wcs_'+splitted[2]+'_'+splitted[3]+'.fits'))
+            inhead=fits.getheader(wcsName)
+            w=wcs.WCS(inhead)
+            wcs_sip_header=w.to_header(relax=True)
+        except:
+            print('cluster %s has no WCS, skipping...' %clusterName)
+            wcs_sip_header=None
 
-def _make_new_fits(self,image_filename):
-    '''
-    Returns new cluster fits file with the
-    updated WCS and some important keywords
-    List of KW can probably be changed as needed
-    '''
-    if os.path.exists(image_filename):
-        ClusterFITSFile=fits.open(clusterFITSName)
-        ClusterHeader=ClusterFITSFile[0].header
-        WCSheader=self._get_wcs_info(image_filename)
-        if WCSheader is not None:
-            for key in WCSheader.keys():
-                ClusterHeader[key]=WCSheader[key]
-            #print "I get here 4"
-            outFITS=fits.PrimaryHDU(ClusterFITSFile[0].data,header=ClusterHeader)
-            new_image_filename = os.path.join(self.science_path,clusterName.replace(".fits","WCS.fits"))
-            outFITS.writeto(new_image_filename))
-        return new_image_filename
-    else:
-        return None
+        return wcs_sip_header
+
+    def _make_new_fits(self,image_filename):
+        '''
+        Returns new cluster fits file with the
+        updated WCS and some important keywords
+        List of KW can probably be changed as needed
+        '''
+        if os.path.exists(image_filename):
+            ClusterFITSFile=fits.open(clusterFITSName)
+            ClusterHeader=ClusterFITSFile[0].header
+            WCSheader=self._get_wcs_info(image_filename)
+            if WCSheader is not None:
+                for key in WCSheader.keys():
+                    ClusterHeader[key]=WCSheader[key]
+                #print "I get here 4"
+                outFITS=fits.PrimaryHDU(ClusterFITSFile[0].data,header=ClusterHeader)
+                new_image_filename = os.path.join(self.science_path,clusterName.replace(".fits","WCS.fits"))
+                outFITS.writeto(new_image_filename)
+            return new_image_filename
+        else:
+            return None
 
     def _add_wcs_to_science_frames(self):
         '''
@@ -82,22 +82,22 @@ def _make_new_fits(self,image_filename):
                 fixed_image_files.append(fixed_image_file)
         self.image_files = fixed_image_files
 
-    def self.set_working_dir(self,path=None):
+    def set_working_dir(self,path=None):
         if path is None:
-            if ~os.path.exists('./tmp')
+            if ~os.path.exists('./tmp'):
                 os.mkdir('./tmp')
             self.work_path = './tmp'
 
-    def self.set_path_to_calib_data(self,path=None):
+    def set_path_to_calib_data(self,path=None):
         if path is None:
             self.calib_path = '../Data/calib'
 
-    def self.set_path_to_science_data(self,path=None):
+    def set_path_to_science_data(self,path=None):
         if path is None:
             self.science_path = '../Data/timmins2019/raw'
             self.reduced_science_path = '../Data/timmins2019/reduced'
 
-    def self.set_path_to_wcs_data(self,path=None):
+    def set_path_to_wcs_data(self,path=None):
         if path is None:
             self.wcs_path = '../Data/timmins2019/raw'
 
@@ -130,7 +130,7 @@ def _make_new_fits(self,image_filename):
         for iflat_file in self.flat_files:
             hdr = fitsio.read_header(iflat_file)
             time = header['EXPTIME'] /  1000.
-            if nflat = 0:
+            if nflat == 0:
                 master_flat = (fitsio.read(iflat_file) - bias_frame - master_dark * time ) * 1./time
             else:
                 master_flat = master_flat + (fitsio.read(iflat_file) - bias_frame - master_dark * time) * 1./time
@@ -161,10 +161,8 @@ def _make_new_fits(self,image_filename):
         '''
         Either read in master dark from file, or pass as an attribute of self()
         Ibid for flat
-        '''
 
-        try:
-            mdark = fits.open()
+        mdark = fits.open()
 
         med_flat_array=[]
         med_dark_array=[]
@@ -186,24 +184,26 @@ def _make_new_fits(self,image_filename):
             med_flat_array.append(hdu[0].data/exptime)
 
         self.mask_file = None
+        '''
+        pass
 
-   def _make_detection_image(self,outfile_name = 'detection.fits'):
-       '''
-       :output: output file where detection image is written.
+    def _make_detection_image(self,outfile_name = 'detection.fits'):
+        '''
+        :output: output file where detection image is written.
 
-       Runs SWarp on provided (reduced!) image files to make a coadd image
-       for SEX and PSFEx detection.
+        Runs SWarp on provided (reduced!) image files to make a coadd image
+        for SEX and PSFEx detection.
 
-       '''
-       ### Code to run SWARP
+        '''
+        ### Code to run SWARP
 
-       image_args = ' '.join(self.image_files)
-       config_arg = '-c astro_config/swarp.config'
-       outfile_arg = '-IMAGEOUT_NAME '+'outfile_name'
-       detection_file = os.path.join(self.work_path,outfile_name)
-       cmd = ' '.join(['swarp',image_args,config_arg,outfile_arg])
-       os.system(cmd)
-       return detection_file
+        image_args = ' '.join(self.image_files)
+        config_arg = '-c astro_config/swarp.config'
+        outfile_arg = '-IMAGEOUT_NAME '+'outfile_name'
+        detection_file = os.path.join(self.work_path,outfile_name)
+        cmd = ' '.join(['swarp',image_args,config_arg,outfile_arg])
+        os.system(cmd)
+        return detection_file
 
 
     def make_catalog(self, sextractor_config_file = './astro_config/sextractor.config', sextractor_param_file = './astro_config/sextractor.param'):
@@ -242,70 +242,70 @@ def _make_new_fits(self,image_filename):
 
 
 
-     def make_image_info_struct(self,max_len_of_filepath = 120):
-         # max_len_of_filepath may cause issues down the line if the file path
-         # is particularly long
-         image_info = meds.util.get_image_info_struct(len(self.image_files),max_len_of_filepath)
+    def make_image_info_struct(self,max_len_of_filepath = 120):
+        # max_len_of_filepath may cause issues down the line if the file path
+        # is particularly long
+        image_info = meds.util.get_image_info_struct(len(self.image_files),max_len_of_filepath)
         # When does i get defined?
-         for image_file in self.image_files:
-			image_info[i]['image_path'] = image_file
-			image_info[i]['image_ext'] = 0
-			image_info[i]['weight_path'] = self.weight_file
-			image_info[i]['weight_ext'] = 0
-			image_info[i]['bmask_path'] = self.mask_file
-			image_info[i]['bmask_ext'] = 0
+        for image_file in self.image_files:
+            image_info[i]['image_path'] = image_file
+            image_info[i]['image_ext'] = 0
+            image_info[i]['weight_path'] = self.weight_file
+            image_info[i]['weight_ext'] = 0
+            image_info[i]['bmask_path'] = self.mask_file
+            image_info[i]['bmask_ext'] = 0
         return image_info
 
     def make_meds_config(self,extra_parameters = None):
-		'''
-		:extra_parameters: dictionary of keys to be used to update the base MEDS configuration dict
+        '''
+        :extra_parameters: dictionary of keys to be used to update the base MEDS configuration dict
 
-		'''
-		# sensible default config.
-		config = {'cutout_types':['weight','seg','bmask'],'psf_type':'psfex'}
+        '''
+        # sensible default config.
+        config = {'cutout_types':['weight','seg','bmask'],'psf_type':'psfex'}
         if extra_parameters is not None:
             config.update(extra_parameters)
         return config
 
-	def _meds_metadata(self):
-		meta = np.empty(1,[('magzp_ref',np.float)])
-		meta['magzp_ref'] = 0.0
-		return meta
+    def _meds_metadata(self):
+        meta = np.empty(1,[('magzp_ref',np.float)])
+        meta['magzp_ref'] = 0.0
+        return meta
 
-	def _calculate_box_size(self,angular_size,size_multiplier = 2.5 min_size = 16, max_size= 64, pixel_scale = 0.23):
-		'''
-		Calculate the cutout size for this survey.
+    def _calculate_box_size(self,angular_size,size_multiplier = 2.5, min_size = 16, max_size= 64, pixel_scale = 0.23):
+        '''
+        Calculate the cutout size for this survey.
 
-		:angular_size: angular size of a source, with some kind of angular units.
-		:size_multiplier: Amount to multiply angular size by to choose boxsize.
-		:deconvolved:
-		:min_size:
-		:max_size:
+        :angular_size: angular size of a source, with some kind of angular units.
+        :size_multiplier: Amount to multiply angular size by to choose boxsize.
+        :deconvolved:
+        :min_size:
+        :max_size:
 
-		'''
-		box_size_float = np.ceil( angular_size/pixel_scale)
+        '''
+        box_size_float = np.ceil( angular_size/pixel_scale)
 
-		# Available box sizes to choose from -> 16 to 256 in increments of 2
-		available_sizes = min_size * 2**(np.arange(np.ceil(np.log2(max_size)-np.log2(min_size)+1)).astype(int))
+        # Available box sizes to choose from -> 16 to 256 in increments of 2
+        available_sizes = min_size * 2**(np.arange(np.ceil(np.log2(max_size)-np.log2(min_size)+1)).astype(int))
 
-		# If a single angular_size was proffered:
-		if isinstance(box_size_float, np.ndarray):
-			available_sizes_matrix = available_sizes.reshape(1,available_sizes.size)
-			available_sizes_matrix[box_size_float.reshape(box_size_float.size,1) > available_sizes.reshape(1,available_sizes.size)] = np.max(available_sizes)+1
-			box_size = np.min(available_sizes_matrix,axis=1)
-		else:
-			box_size = np.min( available_sizes[ available_sizes > box_size_float ] )
-		return box_size
+        # If a single angular_size was proffered:
+        if isinstance(box_size_float, np.ndarray):
+            available_sizes_matrix = available_sizes.reshape(1,available_sizes.size)
+            available_sizes_matrix[box_size_float.reshape(box_size_float.size,1) > available_sizes.reshape(1,available_sizes.size)] = np.max(available_sizes)+1
+            box_size = np.min(available_sizes_matrix,axis=1)
+        else:
+            box_size = np.min( available_sizes[ available_sizes > box_size_float ] )
+        return box_size
 
     def make_object_info_struct(self,catalog=None):
-		if catalog is None:
-			catalog = self.catalog
+        if catalog is None:
+            catalog = self.catalog
 
-		obj_str = meds.util.get_meds_input_struct(catalog.size,extra_fields = [('KRON_RADIUS',np.float)])
-		obj_str['id'] = catalog['NUMBER']
-		obj_str['box_size'] = self._calculate_box_size(catalog['KRON_RADIUS'])
-		obj_str['ra'] = catalog['ALPHAWIN_J2000']
-		obj_str['dec'] = catalog['DELTAWIN_J2000']
+        obj_str = meds.util.get_meds_input_struct(catalog.size,extra_fields = [('KRON_RADIUS',np.float)])
+        obj_str['id'] = catalog['NUMBER']
+        obj_str['box_size'] = self._calculate_box_size(catalog['KRON_RADIUS'])
+        obj_str['ra'] = catalog['ALPHAWIN_J2000']
+        obj_str['dec'] = catalog['DELTAWIN_J2000']
         obj_str['KRON_RADIUS'] = catalog['KRON_RADIUS']
         return obj_str
 
