@@ -154,15 +154,16 @@ class BITMeasurement():
             nflat = nflat+1
         master_flat = master_flat*1./nflat
         master_flat = master_flat/np.median(master_flat)
-        fitsio.write(os.path.join(self.calib_path,'master_dark.fits'),master_flat)
+        pdb.set_trace()
+        fitsio.write(os.path.join(self.calib_path,'master_flat.fits'),master_flat)
 
         reduced_image_files=[]
         for this_image_file in self.image_files:
             # step through and calibrate each image.
             # Write calibrated images to disk.
             # WARNING: as written, function assumes science data is in 0th extension
-            this_image_fits=fits.read(this_image_file)
-            time=this_image_fits[0].header['EXPTIME']
+            this_image_fits=fits.open(this_image_file)
+            time=this_image_fits[0].header['EXPTIME']/1000.
             this_reduced_image = (this_image_fits[0].data - master_bias)-(master_dark*time)
             this_reduced_image = this_reduced_image/master_flat
             updated_header = this_image_fits[0].header
