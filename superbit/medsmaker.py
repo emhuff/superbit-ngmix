@@ -19,6 +19,13 @@ Goals:
   - run the meds maker (use meds.Maker)
   - run ngmix (run library)
 
+TO DO:
+    - Turn _make_new_fits() into an astrometry-net call
+    -> Related: stash astrometry-net index files somewhere useful?
+    - Get optimal bias or subselect good bias frames for master_bias
+    -> Related: adapt code to accept supplying external "master bias"
+    - Make mask file, probably based on master dark and flat frames 
+
 '''
 
 
@@ -34,6 +41,38 @@ class BITMeasurement():
         self.flat_files = flat_files
         self.dark_files = dark_files
         self.bias_files = bias_files
+
+    def set_working_dir(self,path=None):
+        if path is None:
+            self.work_path = './tmp'
+            if not os.path.exists(self.work_path):
+                os.mkdir(self.work_path)
+        else:
+            self.work_path = path
+            if not os.path.exists(self.work_path):
+                os.mkdir(self.work_path)
+
+    def set_path_to_calib_data(self,path=None):
+        if path is None:
+            self.calib_path = '../Data/calib'
+        else:
+            self.calib_path = path
+
+    def set_path_to_science_data(self,path=None):
+        if path is None:
+            self.science_path = '../Data/timmins2019/raw'
+            self.reduced_science_path = '../Data/timmins2019/reduced'
+        else:
+            self.science_path = path
+            self.reduced_science_path = path
+
+    def set_path_to_wcs_data(self,path=None):
+        # Possibly deprecated
+        if path is None:
+            self.wcs_path = '../Data/timmins2019/raw'
+        else:
+            self.wcs_path = path
+
 
     def _get_wcs_info(self,image_filename):
         '''
@@ -77,8 +116,7 @@ class BITMeasurement():
 
     def add_wcs_to_science_frames(self):
         '''
-        looks for wcs files, constucting path and filenames from self.wcs_path and self.image_files.
-        Makes new image .fits files with proper wcs information. Possibly replaces self.image_files with the updated image filenames?
+        wrapper for _make_new_fits() which returns astrometry-corrected images
         '''
         fixed_image_files = []
         for image_file in self.image_files:
@@ -86,36 +124,6 @@ class BITMeasurement():
             if fixed_image_file is not None:
                 fixed_image_files.append(fixed_image_file)
         self.image_files = fixed_image_files
-
-    def set_working_dir(self,path=None):
-        if path is None:
-            self.work_path = './tmp'
-        else:
-            self.work_path = path
-        if ~os.path.exists(self.work_path):
-            os.mkdir(self.work_path)
-
-
-    def set_path_to_calib_data(self,path=None):
-        if path is None:
-            self.calib_path = '../Data/calib'
-        else:
-            self.calib_path = path
-
-    def set_path_to_science_data(self,path=None):
-        if path is None:
-            self.science_path = '../Data/timmins2019/raw'
-            self.reduced_science_path = '../Data/timmins2019/reduced'
-        else:
-            self.science_path = path
-            self.reduced_science_path = path
-
-    def set_path_to_wcs_data(self,path=None):
-        if path is None:
-            self.wcs_path = '../Data/timmins2019/raw'
-        else:
-            self.wcs_path = path
-
 
     def reduce(self):
         # Read in and average together the bias, dark, and flat frames.
@@ -128,19 +136,21 @@ class BITMeasurement():
                 bias_frame = bias_frame + fitsio.read(ibias_file)
             nbias = nbias+1
         master_bias = bias_frame * 1./nbias
-        fitsio.write(os.path.join(self.calib_path,'master_bias.fits'),master_bias)
+        fitsio.write(os.path.join(self.work_path,'master_bias.fits'),master_bias,overwrite=True)
 
         ndark = 0
         for idark_file in self.dark_files:
             hdr = fitsio.read_header(idark_file)
             time = hdr['EXPTIME'] / 1000. # exopsure time, seconds
             if ndark == 0:
-                master_dark = (fitsio.read(idark_file) - bias_frame)*1./time
+                master_dark = (fitsio.read(idark_file) - master_bias)*1./time
             else:
-                master_dark = master_dark + (fitsio.read(idark_file) - bias_frame) * 1./time
+                master_dark = master_dark + (fitsio.read(idark_file) - master_bias) * 1./time
+                med = np.median(master_dark)
+                print(f"{med}")
             ndark = ndark+1
         master_dark = master_dark * 1./ndark
-        fitsio.write(os.path.join(self.calib_path,'master_dark.fits'),master_dark)
+        fitsio.write(os.path.join(self.work_path,'master_dark.fits'),master_dark,overwrite=True)
 
         nflat = 0
         for iflat_file in self.flat_files:
@@ -154,9 +164,7 @@ class BITMeasurement():
             nflat = nflat+1
         master_flat = master_flat*1./nflat
         master_flat = master_flat/np.median(master_flat)
-        pdb.set_trace()
-        fitsio.write(os.path.join(self.calib_path,'master_flat.fits'),master_flat)
-
+        fitsio.write(os.path.join(self.work_path,'master_flat.fits'),master_flat,overwrite=True)
         reduced_image_files=[]
         for this_image_file in self.image_files:
             # step through and calibrate each image.
@@ -168,10 +176,11 @@ class BITMeasurement():
             this_reduced_image = this_reduced_image/master_flat
             updated_header = this_image_fits[0].header
             updated_header['HISTORY']='File has been bias & dark subtracted and FF corrected'
-            this_image_outname = os.path.join(self.reduced_science_path,this_image_file.replace(".fits","_reduced.fits"))
+            this_image_outname=(os.path.basename(this_image_file)).replace(".fits","_reduced.fits")
+            this_image_outname = os.path.join(self.work_path,this_image_outname)
             reduced_image_files.append(this_image_outname)
             this_outfits=fits.PrimaryHDU(this_reduced_image,header=updated_header)
-            this_outfits.writeto(this_image_outname)
+            this_outfits.writeto(this_image_outname,overwrite=True)
         self.image_files=reduced_image_files
 
 
@@ -260,7 +269,6 @@ class BITMeasurement():
         return psfex_model_file
 
 
-
     def make_image_info_struct(self,max_len_of_filepath = 120):
         # max_len_of_filepath may cause issues down the line if the file path
         # is particularly long
@@ -332,10 +340,10 @@ class BITMeasurement():
     def run(self,outfile = "superbit.meds"):
 
         # Set up the paths to the science and calibration data.
+        self.set_working_dir()
         self.set_path_to_calib_data()
         self.set_path_to_science_data()
         # Add a WCS to the science
-        self.set_path_to_wcs_data()
         self.add_wcs_to_science_frames()
         # Reduce the data.
         self.reduce()

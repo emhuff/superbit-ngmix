@@ -24,7 +24,8 @@ try:
 
     bm.set_path_to_calib_data(path='/Users/jemcclea/Research/SuperBIT_2019/A2218/')
     bm.set_path_to_science_data(path='/Users/jemcclea/Research/SuperBIT_2019/A2218/ScienceImages/')
-    bm.set_path_to_wcs_data(path='/Users/jemcclea/Research/SuperBIT_2019/A2218/ScienceImages/')
+    bm.set_working_dir()
+    #bm.set_path_to_wcs_data(path='/Users/jemcclea/Research/SuperBIT_2019/A2218/ScienceImages/')
     #bm.add_wcs_to_science_frames()
     bm.reduce()
 except:
