@@ -21,11 +21,10 @@ Goals:
 
 TO DO:
     - Turn _make_new_fits() into an astrometry-net call
-    -> Related: stash astrometry-net index files somewhere useful?
-    - Get optimal bias or subselect good bias frames for master_bias
-    -> Related: adapt code to accept supplying external "master bias"
-    - Make mask file, probably based on master dark and flat frames 
-
+    -> Or just run through astrometry.net, since we won't get new data until 2021
+    - Make weight files
+    - Stop coadding images of different filters! Control with "images command " I guess...
+    - run medsmaker
 '''
 
 
@@ -127,7 +126,7 @@ class BITMeasurement():
 
     def reduce(self):
         # Read in and average together the bias, dark, and flat frames.
-
+        '''
         nbias = 0
         for ibias_file in self.bias_files:
             if nbias == 0:
@@ -159,16 +158,45 @@ class BITMeasurement():
             if nflat == 0:
                 master_flat = (fitsio.read(iflat_file) - master_bias - master_dark * time ) * 1./time
             else:
-
                 master_flat = master_flat + (fitsio.read(iflat_file) - master_bias - master_dark * time) * 1./time
             nflat = nflat+1
         master_flat = master_flat*1./nflat
         master_flat = master_flat/np.median(master_flat)
         fitsio.write(os.path.join(self.work_path,'master_flat.fits'),master_flat,overwrite=True)
+        '''
+
+        # Taking median biases and darks instead of mean to eliminate odd noise features
+        bias_array=[]
+        for ibias_file in self.bias_files:
+            bias_frame = fitsio.read(ibias_file)
+            bias_array.append(bias_frame)
+        master_bias=np.median(bias_array,axis=0)
+        fitsio.write(os.path.join(self.work_path,'master_bias_median.fits'),master_bias,clobber=True)
+
+        dark_array=[]
+        for idark_file in self.dark_files:
+            hdr = fitsio.read_header(idark_file)
+            time = hdr['EXPTIME'] / 1000. # exopsure time, seconds
+            dark_frame = ((fitsio.read(idark_file)) - master_bias) * 1./time
+            dark_array.append(dark_frame)
+        master_dark = np.median(dark_array,axis=0)
+        fitsio.write(os.path.join(self.work_path,'master_dark_median.fits'),master_dark,clobber=True)
+
+        flat_array=[]
+        # I am not sure whether it's good practice to do this... Divide the flats by the time.
+        # Ideally, all the flats should have the SAME exposure time, or rather, each filter
+        # gets its own band with its own flat exptime
+        for iflat_file in self.flat_files:
+            hdr = fitsio.read_header(iflat_file)
+            time = hdr['EXPTIME'] /  1000.
+            flat_frame = (fitsio.read(iflat_file) - master_bias - master_dark * time ) * 1./time
+            flat_array.append(flat_frame)
+        master_flat1 = np.median(flat_array,axis=0)
+        master_flat = master_flat1/np.median(master_flat1)
+        fitsio.write(os.path.join(self.work_path,'master_flat_median.fits'),master_flat,clobber=True)
+
         reduced_image_files=[]
         for this_image_file in self.image_files:
-            # step through and calibrate each image.
-            # Write calibrated images to disk.
             # WARNING: as written, function assumes science data is in 0th extension
             this_image_fits=fits.open(this_image_file)
             time=this_image_fits[0].header['EXPTIME']/1000.
@@ -184,36 +212,55 @@ class BITMeasurement():
         self.image_files=reduced_image_files
 
 
-    def make_mask(self, column_dark_thresh = None, global_dark_thresh = None, global_flat_thresh = None):
-        # Use the flats and darks to generate a bad pixel mask.
+    def make_mask(self, global_dark_thresh = 10, global_flat_thresh = 0.85,overwrite=False):
         '''
-        Either read in master dark from file, or pass as an attribute of self()
-        Ibid for flat
+        Use master flat and dark to generate a bad pixel mask.
+        Default values for thresholds may be superseded in function call
+        '''
+        self.mask_file = os.path.join(self.work_path,'supermask.fits')
 
-        mdark = fits.open()
+        if (not os.path.exists(self.mask_file)) or (overwrite==True):
+            # It's bad practice to hard-code filenames in
+            mdark_fname = os.path.join(self.work_path,'master_dark_median.fits')
+            mflat_fname = os.path.join(self.work_path,'master_flat_median.fits')
+            mdark = fits.getdata(mdark_fname)
+            mflat = fits.getdata(mflat_fname)
 
-        med_flat_array=[]
-        med_dark_array=[]
-        for d in self.dark_files:
-            hdu=fits.open(d)
-            flattened=np.ravel(hdu[0].data)
-            outrav=np.zeros(hdu[0].data.size)
-            outrav[flattened>=column_dark_thresh]=1
+            # Start with dark
+            med_dark_array=[]
+            flattened=np.ravel(mdark)
+            outrav=np.zeros(mflat.size)
+            outrav[flattened>=global_dark_thresh]=1
             med_dark_array.append(outrav)
-        sum_dark = np.sum(med_dark_array,axis=0)
-        superdark=np.ones(sum_dark.size)
-        superdark[sum_dark==(len(dark_files))]=0
-        #outfile = fits.PrimaryHDU(superdark.reshape(np.shape(hdu[0].data)))
-        #outfile.writeto('superdark.fits')
+            sum_dark = np.sum(med_dark_array,axis=0)
+            # This transforms our bpm=1 array to a bpm=0 array
+            darkmask=np.ones(sum_dark.size)
+            #darkmask[sum_dark==(len(dark_files))]=0
+            darkmask[sum_dark==1]=0
+            outfile = fits.PrimaryHDU(darkmask.reshape(np.shape(mdark)))
+            outfile.writeto(os.path.join(self.work_path,'darkmask.fits'),overwrite=True)
 
-        for f in self.flat_files:
-            hdu=fits.open(f)
-            exptime=(hdu[0].header['EXPTIME'])/1000.
-            med_flat_array.append(hdu[0].data/exptime)
+            # repeat for flat
+            med_flat_array=[]
+            flattened=np.ravel(mflat)
+            outrav=np.zeros(mflat.size)
+            outrav[flattened<=global_flat_thresh]=1
+            med_flat_array.append(outrav)
+            sum_flat = np.sum(med_flat_array,axis=0)
+            # This transforms our bpm=1 array to a bpm=0 array
+            flatmask=np.ones(sum_flat.size)
+            #darkmask[sum_dark==(len(dark_files))]=0
+            flatmask[sum_flat==1]=0
+            outfile = fits.PrimaryHDU(flatmask.reshape(np.shape(mflat)))
+            outfile.writeto(os.path.join(self.work_path,'flatmask.fits'),overwrite=True)
 
-        self.mask_file = None
-        '''
-        pass
+            # Now generate actual mask
+            supermask = (darkmask + flatmask)/2.
+            outfile = fits.PrimaryHDU(flatmask.reshape(np.shape(mflat)))
+            outfile.writeto(os.path.join(self.work_path,'supermask.fits'),overwrite=True)
+
+        else:
+            pass
 
     def _make_detection_image(self,outfile_name = 'detection.fits'):
         '''
@@ -221,50 +268,77 @@ class BITMeasurement():
 
         Runs SWarp on provided (reduced!) image files to make a coadd image
         for SEX and PSFEx detection.
-
         '''
         ### Code to run SWARP
 
         image_args = ' '.join(self.image_files)
-        config_arg = '-c astro_config/swarp.config'
-        outfile_arg = '-IMAGEOUT_NAME '+'outfile_name'
-        detection_file = os.path.join(self.work_path,outfile_name)
-        cmd = ' '.join(['swarp',image_args,config_arg,outfile_arg])
+        detection_file = os.path.join(self.work_path,'A2218_coadd.fits') # This is coadd
+        weight_file = os.path.join(self.work_path,'A2218_coadd.weight.fits') # This is coadd weight
+        config_arg = '-c ../superbit/astro_config/swarp.config'
+        weight_arg = '-WEIGHT_IMAGE '+self.mask_file
+        outfile_arg = '-IMAGEOUT_NAME '+ detection_file + ' -WEIGHTOUT_NAME ' + weight_file
+        cmd = ' '.join(['swarp ',image_args,weight_arg,config_arg,outfile_arg,config_arg])
+        print("swarp cmd is " + cmd)
         os.system(cmd)
-        return detection_file
+        return detection_file,weight_file
 
 
-    def make_catalog(self, sextractor_config_file = './astro_config/sextractor.config', sextractor_param_file = './astro_config/sextractor.param'):
+    def make_catalog(self, sextractor_config_path = '../superbit/astro_config/'):
         '''
         Wrapper for astromatic tools to make catalog from provided images.
         This returns catalog for (stacked) detection image
         '''
-        detection_file = self._make_detection_image()
-        cmd = ' '.join(['sex',detection_file,'-c','astro_config/sextractor.config'])
+        detection_file, weight_file= self._make_detection_image()
+        # Now for the million args...
+        config_arg = sextractor_config_path+'sextractor.config'
+        param_arg = '-PARAMETERS_NAME '+sextractor_config_path+'sextractor.param'
+        nnw_arg = '-STARNNW_NAME '+sextractor_config_path+'default.nnw'
+        filter_arg = '-FILTER_NAME '+sextractor_config_path+'default.conv'
+        cmd = ' '.join(['sex',detection_file,'-WEIGHT_IMAGE',weight_file,param_arg,nnw_arg,filter_arg,'-c',config_arg])
+        print("sex cmd is " + cmd)
         os.system(cmd)
-        self.catalog = fitsio.read('catalog.fits',ext=2)
+        try:
+            self.catalog = fitsio.read('catalog.fits',ext=2)
+        except:
+            pdb.set_trace()
 
     def make_psf_models(self):
         #self.select_stars_for_psf() # not necessary, psfex does its own selection
         self.psfEx_models = []
-
+        psfex_out_dir = os.path.join(self.work_path,'psfex_output')
+        if not os.path.exists(psfex_out_dir):
+            cmd=' '.join(['mkdir',psfex_out_dir])
         for imagefile in self.image_files:
-            psfex_model_file = self._make_psf_model(imagefile)
-            self.psfEx_models.append(psfex.PSFEx(psfex_model_file))
+            #update as necessary
+            weightfile=self.mask_file
+            psfex_model_file = self._make_psf_model(imagefile,weightfile = weightfile)
+            try:
+                self.psfEx_models.append(psfex.PSFEx(psfex_model_file))
+            except:
+                pdb.set_trace()
 
-    def _make_psf_model(self,imagefile,sextractor_config_file = './astro_config/sextractor.config', sextractor_param_file = './astro_config/sextractor.param',psfex_config_file = './astro_config/psfex.config'):
+    def _make_psf_model(self,imagefile,weightfile = 'weight.fits',sextractor_config_path = '../superbit/astro_config/',psfex_out_dir='./'):
         '''
         Gets called by make_psf_models for every image in self.image_files
         Wrapper for PSFEx. Requires a FITS-LDAC format catalog with vignettes
         '''
         # First, run SExtractor.
         # Hopefully imagefile is an absolute path!
+        sextractor_config_file = sextractor_config_path+'sextractor.config'
+        sextractor_param_arg = '-PARAMETERS_NAME '+sextractor_config_path+'sextractor.param'
+        sextractor_nnw_arg = '-STARNNW_NAME '+sextractor_config_path+'default.nnw'
+        sextractor_filter_arg = '-FILTER_NAME '+sextractor_config_path+'default.conv'
         psfcat_name=imagefile.replace('.fits','_cat.ldac')
-        cmd = ' '.join(['sex',imagefile,'-c','astro_config/sextractor.config','-CATALOG_NAME ',outcatname])
+        cmd = ' '.join(['sex',imagefile,'-WEIGHT_IMAGE',weightfile,'-c',sextractor_config_file,'-CATALOG_NAME ',psfcat_name,sextractor_param_arg,sextractor_nnw_arg,sextractor_filter_arg])
+        print("sex4psf cmd is " + cmd)
         os.system(cmd)
+
         # Now run PSFEx on that image and accompanying catalog
-        cmd = ' '.join('psfex', psfcat_name,'-c','astro_config/psfex.config','-PSFVAR_DEGREES','5')
-        psfex_model_file=imagefile.replace('.fits','.psf')
+        psfex_config_arg = '-c '+sextractor_config_path+'psfex.config'
+        cmd = ' '.join(['psfex', psfcat_name,psfex_config_arg,'-PSFVAR_DEGREES','5'])
+        print("psfex cmd is " + cmd)
+        os.system(cmd)
+        psfex_model_file=psfcat_name.replace('.ldac','.psf')
         # Just return name, the make_psf_models method reads it in as a PSFEx object
         return psfex_model_file
 
@@ -277,7 +351,9 @@ class BITMeasurement():
         for image_file in self.image_files:
             image_info[i]['image_path'] = image_file
             image_info[i]['image_ext'] = 0
-            image_info[i]['weight_path'] = self.weight_file
+            #image_info[i]['weight_path'] = self.weight_file
+            # FOR NOW:
+            image_info[i]['weight_path'] = self.mask_file
             image_info[i]['weight_ext'] = 0
             image_info[i]['bmask_path'] = self.mask_file
             image_info[i]['bmask_ext'] = 0
@@ -348,6 +424,7 @@ class BITMeasurement():
         # Reduce the data.
         self.reduce()
         # Make a mask.
+        # NB: can also read in a pre-existing mask by setting self.mask_file
         self.make_mask()
         # Combine images, make a catalog.
         self.make_catalog()
