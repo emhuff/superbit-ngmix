@@ -20,11 +20,10 @@ Goals:
   - run ngmix (run library)
 
 TO DO:
-    - Turn _make_new_fits() into an astrometry-net call
-    -> Or just run through astrometry.net, since we won't get new data until 2021
     - Make weight files
+    - Do a flux calibration for photometric scaling in coaddition
     - Stop coadding images of different filters! Control with "images command " I guess...
-    - run medsmaker
+    - Run medsmaker
 '''
 
 
@@ -124,76 +123,42 @@ class BITMeasurement():
                 fixed_image_files.append(fixed_image_file)
         self.image_files = fixed_image_files
 
-    def reduce(self):
+    def reduce(self,overwrite=False):
         # Read in and average together the bias, dark, and flat frames.
-        '''
-        nbias = 0
-        for ibias_file in self.bias_files:
-            if nbias == 0:
+        bname = os.path.join(self.work_path,'master_bias_median.fits')
+        if (not os.path.exists(bname) or (overwrite==True)):
+            # Taking median biases and darks instead of mean to eliminate odd noise features
+            bias_array=[]
+            for ibias_file in self.bias_files:
                 bias_frame = fitsio.read(ibias_file)
-            else:
-                bias_frame = bias_frame + fitsio.read(ibias_file)
-            nbias = nbias+1
-        master_bias = bias_frame * 1./nbias
-        fitsio.write(os.path.join(self.work_path,'master_bias.fits'),master_bias,overwrite=True)
+                bias_array.append(bias_frame)
+                master_bias=np.median(bias_array,axis=0)
+                fitsio.write(os.path.join(self.work_path,'master_bias_median.fits'),master_bias,clobber=True)
 
-        ndark = 0
-        for idark_file in self.dark_files:
-            hdr = fitsio.read_header(idark_file)
-            time = hdr['EXPTIME'] / 1000. # exopsure time, seconds
-            if ndark == 0:
-                master_dark = (fitsio.read(idark_file) - master_bias)*1./time
-            else:
-                master_dark = master_dark + (fitsio.read(idark_file) - master_bias) * 1./time
-                med = np.median(master_dark)
-                print(f"{med}")
-            ndark = ndark+1
-        master_dark = master_dark * 1./ndark
-        fitsio.write(os.path.join(self.work_path,'master_dark.fits'),master_dark,overwrite=True)
+        dname = os.path.join(self.work_path,'master_dark_median.fits')
+        if (not os.path.exists(dname) or (overwrite==True)):
+            dark_array=[]
+            for idark_file in self.dark_files:
+                hdr = fitsio.read_header(idark_file)
+                time = hdr['EXPTIME'] / 1000. # exopsure time, seconds
+                dark_frame = ((fitsio.read(idark_file)) - master_bias) * 1./time
+                dark_array.append(dark_frame)
+                master_dark = np.median(dark_array,axis=0)
+                fitsio.write(os.path.join(self.work_path,'master_dark_median.fits'),master_dark,clobber=True)
 
-        nflat = 0
-        for iflat_file in self.flat_files:
-            hdr = fitsio.read_header(iflat_file)
-            time = hdr['EXPTIME'] /  1000.
-            if nflat == 0:
-                master_flat = (fitsio.read(iflat_file) - master_bias - master_dark * time ) * 1./time
-            else:
-                master_flat = master_flat + (fitsio.read(iflat_file) - master_bias - master_dark * time) * 1./time
-            nflat = nflat+1
-        master_flat = master_flat*1./nflat
-        master_flat = master_flat/np.median(master_flat)
-        fitsio.write(os.path.join(self.work_path,'master_flat.fits'),master_flat,overwrite=True)
-        '''
-
-        # Taking median biases and darks instead of mean to eliminate odd noise features
-        bias_array=[]
-        for ibias_file in self.bias_files:
-            bias_frame = fitsio.read(ibias_file)
-            bias_array.append(bias_frame)
-        master_bias=np.median(bias_array,axis=0)
-        fitsio.write(os.path.join(self.work_path,'master_bias_median.fits'),master_bias,clobber=True)
-
-        dark_array=[]
-        for idark_file in self.dark_files:
-            hdr = fitsio.read_header(idark_file)
-            time = hdr['EXPTIME'] / 1000. # exopsure time, seconds
-            dark_frame = ((fitsio.read(idark_file)) - master_bias) * 1./time
-            dark_array.append(dark_frame)
-        master_dark = np.median(dark_array,axis=0)
-        fitsio.write(os.path.join(self.work_path,'master_dark_median.fits'),master_dark,clobber=True)
-
-        flat_array=[]
-        # I am not sure whether it's good practice to do this... Divide the flats by the time.
-        # Ideally, all the flats should have the SAME exposure time, or rather, each filter
-        # gets its own band with its own flat exptime
-        for iflat_file in self.flat_files:
-            hdr = fitsio.read_header(iflat_file)
-            time = hdr['EXPTIME'] /  1000.
-            flat_frame = (fitsio.read(iflat_file) - master_bias - master_dark * time ) * 1./time
-            flat_array.append(flat_frame)
-        master_flat1 = np.median(flat_array,axis=0)
-        master_flat = master_flat1/np.median(master_flat1)
-        fitsio.write(os.path.join(self.work_path,'master_flat_median.fits'),master_flat,clobber=True)
+        fname = os.path.join(self.work_path,'master_flat_median.fits')
+        if (not os.path.exists(fname) or (overwrite==True)):
+            flat_array=[]
+            # Ideally, all the flats should have the SAME exposure time, or rather, each filter
+            # gets its own band with its own flat exptime
+            for iflat_file in self.flat_files:
+                hdr = fitsio.read_header(iflat_file)
+                time = hdr['EXPTIME'] /  1000.
+                flat_frame = (fitsio.read(iflat_file) - master_bias - master_dark * time ) * 1./time
+                flat_array.append(flat_frame)
+                master_flat1 = np.median(flat_array,axis=0)
+                master_flat = master_flat1/np.median(master_flat1)
+                fitsio.write(os.path.join(self.work_path,'master_flat_median.fits'),master_flat,clobber=True)
 
         reduced_image_files=[]
         for this_image_file in self.image_files:
@@ -262,7 +227,7 @@ class BITMeasurement():
         else:
             pass
 
-    def _make_detection_image(self,outfile_name = 'detection.fits'):
+    def _make_detection_image(self,outfile_name = 'detection.fits',weightout_name='weight.fits'):
         '''
         :output: output file where detection image is written.
 
@@ -272,12 +237,12 @@ class BITMeasurement():
         ### Code to run SWARP
 
         image_args = ' '.join(self.image_files)
-        detection_file = os.path.join(self.work_path,'A2218_coadd.fits') # This is coadd
-        weight_file = os.path.join(self.work_path,'A2218_coadd.weight.fits') # This is coadd weight
+        detection_file = os.path.join(self.work_path,outfile_name) # This is coadd
+        weight_file = os.path.join(self.work_path,weightout_name) # This is coadd weight
         config_arg = '-c ../superbit/astro_config/swarp.config'
         weight_arg = '-WEIGHT_IMAGE '+self.mask_file
         outfile_arg = '-IMAGEOUT_NAME '+ detection_file + ' -WEIGHTOUT_NAME ' + weight_file
-        cmd = ' '.join(['swarp ',image_args,weight_arg,config_arg,outfile_arg,config_arg])
+        cmd = ' '.join(['swarp ',image_args,weight_arg,outfile_arg,config_arg])
         print("swarp cmd is " + cmd)
         os.system(cmd)
         return detection_file,weight_file
@@ -288,7 +253,7 @@ class BITMeasurement():
         Wrapper for astromatic tools to make catalog from provided images.
         This returns catalog for (stacked) detection image
         '''
-        detection_file, weight_file= self._make_detection_image()
+        detection_file, weight_file= self._make_detection_image(outfile_name='A2218_coadd.fits',weightout_name='A2218_coadd.weight.fits')
         # Now for the million args...
         config_arg = sextractor_config_path+'sextractor.config'
         param_arg = '-PARAMETERS_NAME '+sextractor_config_path+'sextractor.param'
@@ -375,7 +340,7 @@ class BITMeasurement():
         meta['magzp_ref'] = 0.0
         return meta
 
-    def _calculate_box_size(self,angular_size,size_multiplier = 2.5, min_size = 16, max_size= 64, pixel_scale = 0.23):
+    def _calculate_box_size(self,angular_size,size_multiplier = 2.5, min_size = 16, max_size= 64, pixel_scale = 0.206):
         '''
         Calculate the cutout size for this survey.
 
@@ -413,14 +378,14 @@ class BITMeasurement():
         return obj_str
 
 
-    def run(self,outfile = "superbit.meds"):
+    def run(self,outfile = "superbit.meds",overwrite=False):
 
         # Set up the paths to the science and calibration data.
         self.set_working_dir()
-        self.set_path_to_calib_data()
-        self.set_path_to_science_data()
+        #self.set_path_to_calib_data()
+        #self.set_path_to_science_data()
         # Add a WCS to the science
-        self.add_wcs_to_science_frames()
+        #self.add_wcs_to_science_frames()
         # Reduce the data.
         self.reduce()
         # Make a mask.
