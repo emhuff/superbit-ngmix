@@ -1,0 +1,12 @@
+##
+## This directory contains raw images that have had their WCS information updated
+## by astrometry.net (web submission)
+##
+
+ - Files ending in *_WCS.fits are the raw (no CCD detrending)
+   FITS files with new and improved WCS solutions applied
+   
+ - Files ending in *.wcs are FITS binary header-like objects containing
+   the transforms from astrometry.net but no image data or other header info
+
+
