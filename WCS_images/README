@@ -10,3 +10,15 @@
    the transforms from astrometry.net but no image data or other header info
 
 
+filter of image_ifc_1568795884_15916_target_300_WCS.fits is Luminance
+filter of image_ifc_1568794154_7326_sci_150_WCS.fits is Luminance
+filter of image_ifc_1568795503_14024_target_300_WCS.fits is Luminance
+filter of image_ifc_1568792972_1459_target_150_WCS.fits is Luminance
+filter of image_ifc_1568796284_17900_target_300_WCS.fits is Luminance
+filter of image_ifc_1568798827_30527_target_300_G_WCS.fits is Green
+filter of image_ifc_1568798411_28464_target_300_IR_WCS.fits is IR
+filter of image_ifc_1568797524_24059_target_300_B_WCS.fits is Blue
+filter of image_ifc_1568795115_12099_target_300_WCS.fits is Luminance
+filter of image_ifc_1568793181_2498_target_150_WCS.fits is Luminance
+filter of image_ifc_1568793613_4643_target_300_WCS.fits is Luminance
+filter of image_ifc_1568793809_5616_target_150_WCS.fits is Luminance
