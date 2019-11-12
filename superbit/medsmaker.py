@@ -8,6 +8,7 @@ import string
 import pdb
 from astropy import wcs
 import fitsio
+import esutil as eu
 '''
 Goals:
   - Take as input calibrated images
@@ -21,8 +22,8 @@ Goals:
 
 TO DO:
     - Make weight files
-    - Do a flux calibration for photometric scaling in coaddition
-    - Stop coadding images of different filters! Control with "images command " I guess...
+    - Do a flux calibration for photometric scaling in coaddition/divide by exposure time
+    - Actually do darks better: match exposure times, rather than collapsing them all down
     - Run medsmaker
 '''
 
@@ -132,8 +133,10 @@ class BITMeasurement():
             for ibias_file in self.bias_files:
                 bias_frame = fitsio.read(ibias_file)
                 bias_array.append(bias_frame)
-                master_bias=np.median(bias_array,axis=0)
+                master_bias = np.median(bias_array,axis=0)
                 fitsio.write(os.path.join(self.work_path,'master_bias_median.fits'),master_bias,clobber=True)
+        else:
+            master_bias = fitsio.read(bname)
 
         dname = os.path.join(self.work_path,'master_dark_median.fits')
         if (not os.path.exists(dname) or (overwrite==True)):
@@ -145,6 +148,8 @@ class BITMeasurement():
                 dark_array.append(dark_frame)
                 master_dark = np.median(dark_array,axis=0)
                 fitsio.write(os.path.join(self.work_path,'master_dark_median.fits'),master_dark,clobber=True)
+        else:
+            master_dark=fitsio.read(dname)
 
         fname = os.path.join(self.work_path,'master_flat_median.fits')
         if (not os.path.exists(fname) or (overwrite==True)):
@@ -159,6 +164,8 @@ class BITMeasurement():
                 master_flat1 = np.median(flat_array,axis=0)
                 master_flat = master_flat1/np.median(master_flat1)
                 fitsio.write(os.path.join(self.work_path,'master_flat_median.fits'),master_flat,clobber=True)
+        else:
+            master_flat=fitsio.read(fname)
 
         reduced_image_files=[]
         for this_image_file in self.image_files:
@@ -311,8 +318,10 @@ class BITMeasurement():
     def make_image_info_struct(self,max_len_of_filepath = 120):
         # max_len_of_filepath may cause issues down the line if the file path
         # is particularly long
+
         image_info = meds.util.get_image_info_struct(len(self.image_files),max_len_of_filepath)
         # When does i get defined?
+        i=0
         for image_file in self.image_files:
             image_info[i]['image_path'] = image_file
             image_info[i]['image_ext'] = 0
@@ -322,6 +331,7 @@ class BITMeasurement():
             image_info[i]['weight_ext'] = 0
             image_info[i]['bmask_path'] = self.mask_file
             image_info[i]['bmask_ext'] = 0
+            i+=1
         return image_info
 
     def make_meds_config(self,extra_parameters = None):
@@ -335,9 +345,9 @@ class BITMeasurement():
             config.update(extra_parameters)
         return config
 
-    def _meds_metadata(self):
+    def _meds_metadata(self,magzp=0.0):
         meta = np.empty(1,[('magzp_ref',np.float)])
-        meta['magzp_ref'] = 0.0
+        meta['magzp_ref'] = magzp
         return meta
 
     def _calculate_box_size(self,angular_size,size_multiplier = 2.5, min_size = 16, max_size= 64, pixel_scale = 0.206):
@@ -358,8 +368,10 @@ class BITMeasurement():
 
         # If a single angular_size was proffered:
         if isinstance(box_size_float, np.ndarray):
-            available_sizes_matrix = available_sizes.reshape(1,available_sizes.size)
-            available_sizes_matrix[box_size_float.reshape(box_size_float.size,1) > available_sizes.reshape(1,available_sizes.size)] = np.max(available_sizes)+1
+            available_sizes_matrix = available_sizes.reshape(1,available_sizes.size).repeat(angular_size.size,axis=0)
+            box_size_float_matrix=box_size_float.reshape(box_size_float.size,1)
+            #available_sizes_matrix[box_size_float.reshape(box_size_float.size,1) > available_sizes.reshape(1,available_sizes.size)] = np.max(available_sizes)+1
+            available_sizes_matrix[box_size_float.reshape(box_size_float.size,1) > available_sizes_matrix] = np.max(available_sizes)+1
             box_size = np.min(available_sizes_matrix,axis=1)
         else:
             box_size = np.min( available_sizes[ available_sizes > box_size_float ] )
@@ -378,7 +390,8 @@ class BITMeasurement():
         return obj_str
 
 
-    def run(self,outfile = "superbit.meds",overwrite=False):
+    def run(self,outfile = "superbit.meds",clobber=False):
+        # Make a MEDS, clobbering if needed
 
         # Set up the paths to the science and calibration data.
         self.set_working_dir()
@@ -387,10 +400,10 @@ class BITMeasurement():
         # Add a WCS to the science
         #self.add_wcs_to_science_frames()
         # Reduce the data.
-        self.reduce()
+        self.reduce(overwrite=clobber)
         # Make a mask.
         # NB: can also read in a pre-existing mask by setting self.mask_file
-        self.make_mask()
+        self.make_mask(overwrite=clobber)
         # Combine images, make a catalog.
         self.make_catalog()
         # Build a PSF model for each image.
@@ -401,6 +414,8 @@ class BITMeasurement():
         obj_info = self.make_object_info_struct()
         # Make the MEDS config file.
         meds_config = self.make_meds_config()
+        # Create metadata for MEDS
+        meta = self._meds_metadata(magzp=30.0)
         # Finally, make and write the MEDS file.
-        medsObj = meds.maker.MEDSMaker(obj_data,self.image_info,config=meds_config,psf_data = psf_models,meta_data=meta)
+        medsObj = meds.maker.MEDSMaker(obj_info,image_info,config=meds_config,psf_data = self.psfEx_models,meta_data=meta)
         medsObj.write(outfile)
