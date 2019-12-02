@@ -22,19 +22,21 @@ try:
     bm = medsmaker.BITMeasurement(image_files=science,flat_files=flats, dark_files=darks, bias_files=biases)
     # The path names should be updated; as written the code also expects all
     # calibration files to be in the same directory
-    '''
+
+    """
     bm.set_working_dir()
     bm.set_path_to_calib_data(path='/Users/jemcclea/Research/SuperBIT_2019/A2218/')
     bm.set_path_to_science_data(path='/Users/jemcclea/Research/SuperBIT_2019/A2218/ScienceImages/')
     bm.reduce(overwrite=False)
     bm.make_mask(overwrite=False)
-    bm.make_catalog()
+    bm.make_catalog(source_selection = True)
+
     bm.make_psf_models()
     image_info = bm.make_image_info_struct()
     obj_info = bm.make_object_info_struct()
-    '''
-    bm.run(clobber=False)
-
+    """
+    bm.run(clobber=False,source_selection = True)
+    
 except:
     thingtype, value, tb = sys.exc_info()
     traceback.print_exc()

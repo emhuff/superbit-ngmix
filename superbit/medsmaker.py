@@ -9,6 +9,12 @@ import pdb
 from astropy import wcs
 import fitsio
 import esutil as eu
+
+import astropy.units as u
+import astropy.coordinates
+from astroquery.gaia import Gaia
+
+
 '''
 Goals:
   - Take as input calibrated images
@@ -254,8 +260,30 @@ class BITMeasurement():
         os.system(cmd)
         return detection_file,weight_file
 
+    def select_sources_from_catalog(self,fullcat,min_size = 3.5,max_size=10.0,size_key='FLUX_RADIUS'):
+        # Choose sources based on quality cuts on this catalog.
+        keep = (self.catalog[size_key] > min_size) & (self.catalog[size_key] < max_size)
+        self.catalog = self.catalog[keep.nonzero()[0]]
 
-    def make_catalog(self, sextractor_config_path = '../superbit/astro_config/'):
+        print("Also selecting on SNR_WIN>10 and SExtractor flags <17...")
+        keep2 = (self.catalog['SNR_WIN']>=10) & (self.catalog['FLAGS']<17)
+        self.catalog = self.catalog[keep2.nonzero()[0]]
+        
+        # Also write trimmed catalog to file
+        cmd = 'mv coadd_catalog.fits coadd_catalog_full.fits'
+        os.system(cmd)
+        fullcat[2].data = self.catalog
+        fullcat.writeto('coadd_catalog.fits',overwrite=True)
+
+    def select_sources_from_gaia():
+        # Use some set of criteria to choose sources for measurement.
+
+        coord = astropy.coordinates.SkyCoord(hdr['CRVAL1'],hdr['CRVAL2'],unit='deg')
+        result = Gaia.cone_search_async(coord,radius=10*u.arcminute)
+        catalog = result.get_data()
+        pass
+
+    def make_catalog(self, sextractor_config_path = '../superbit/astro_config/',source_selection = False):
         '''
         Wrapper for astromatic tools to make catalog from provided images.
         This returns catalog for (stacked) detection image
@@ -270,12 +298,16 @@ class BITMeasurement():
         print("sex cmd is " + cmd)
         os.system(cmd)
         try:
-            self.catalog = fitsio.read('catalog.fits',ext=2)
+            le_cat = fits.open('coadd_catalog.fits')
+            self.catalog = le_cat[2].data
+            if source_selection is True:
+                self.select_sources_from_catalog(fullcat=le_cat)
         except:
+            print("coadd catalog could not be loaded; check name?")
             pdb.set_trace()
 
     def make_psf_models(self):
-        #self.select_stars_for_psf() # not necessary, psfex does its own selection
+
         self.psfEx_models = []
         psfex_out_dir = os.path.join(self.work_path,'psfex_output')
         if not os.path.exists(psfex_out_dir):
@@ -300,20 +332,46 @@ class BITMeasurement():
         sextractor_param_arg = '-PARAMETERS_NAME '+sextractor_config_path+'sextractor.param'
         sextractor_nnw_arg = '-STARNNW_NAME '+sextractor_config_path+'default.nnw'
         sextractor_filter_arg = '-FILTER_NAME '+sextractor_config_path+'default.conv'
-        psfcat_name=imagefile.replace('.fits','_cat.ldac')
-        cmd = ' '.join(['sex',imagefile,'-WEIGHT_IMAGE',weightfile,'-c',sextractor_config_file,'-CATALOG_NAME ',psfcat_name,sextractor_param_arg,sextractor_nnw_arg,sextractor_filter_arg])
+        imcat_ldac_name=imagefile.replace('.fits','_cat.ldac')
+        cmd = ' '.join(['sex',imagefile,'-WEIGHT_IMAGE',weightfile,'-c',sextractor_config_file,'-CATALOG_NAME ',imcat_ldac_name,sextractor_param_arg,sextractor_nnw_arg,sextractor_filter_arg])
         print("sex4psf cmd is " + cmd)
         os.system(cmd)
+
+        # Get a "clean" star catalog for PSFEx input
+        psfcat_name = self._select_stars_for_psf(sscat=imcat_ldac_name,imfile=imagefile)
 
         # Now run PSFEx on that image and accompanying catalog
         psfex_config_arg = '-c '+sextractor_config_path+'psfex.config'
         cmd = ' '.join(['psfex', psfcat_name,psfex_config_arg,'-PSFVAR_DEGREES','5'])
         print("psfex cmd is " + cmd)
         os.system(cmd)
-        psfex_model_file=psfcat_name.replace('.ldac','.psf')
+        psfex_model_file=imcat_ldac_name.replace('.ldac','.psf')
         # Just return name, the make_psf_models method reads it in as a PSFEx object
         return psfex_model_file
 
+    def _select_stars_for_psf(self,sscat,imfile):
+        '''
+        method to obtain stars from SExtractor catalog by comparing to GAIA
+            sscat : input ldac-format catalog from which to select stars
+            imfile : image file on which sscat is based; needed for header's CRVAL kw
+        '''
+        # Read in header, get catalog of GAIA sources that overlap the field, ish.
+
+        hdr = fits.getheader(imfile)
+        coord = astropy.coordinates.SkyCoord(hdr['CRVAL1'],hdr['CRVAL2'],unit='deg')
+        result = Gaia.cone_search_async(coord,radius=14*u.arcminute)
+        catalog = result.get_data()
+        catalog_wg = catalog[catalog['parallax'] >= catalog['parallax_error']]
+        # get RA/Dec of input catalog, cross-match against GAIA
+        ss = fits.open(sscat)
+        sexmatcher = eu.htm.Matcher(16, ra=ss[2].data['ALPHAWIN_J2000'], dec = ss[2].data['DELTAWIN_J2000'])
+        gaia_matches, sexmatches, dist = sexmatcher.match(catalog_wg['ra'],catalog_wg['dec'],radius = 6E-4,maxmatch=1)
+        # Save result to file, return filename
+        outname = sscat.replace('.ldac','.star')
+        ss[2].data=ss[2].data[sexmatches]
+        ss.writeto(outname,overwrite=True)
+
+        return outname
 
     def make_image_info_struct(self,max_len_of_filepath = 120):
         # max_len_of_filepath may cause issues down the line if the file path
@@ -340,7 +398,7 @@ class BITMeasurement():
 
         '''
         # sensible default config.
-        config = {'cutout_types':['weight','seg','bmask'],'psf_type':'psfex'}
+        config = {'first_image_is_coadd': False,'cutout_types':['weight','seg','bmask'],'psf_type':'psfex'}
         if extra_parameters is not None:
             config.update(extra_parameters)
         return config
@@ -381,8 +439,9 @@ class BITMeasurement():
         if catalog is None:
             catalog = self.catalog
 
-        obj_str = meds.util.get_meds_input_struct(catalog.size,extra_fields = [('KRON_RADIUS',np.float)])
+        obj_str = meds.util.get_meds_input_struct(catalog.size,extra_fields = [('KRON_RADIUS',np.float),('number',np.int)])
         obj_str['id'] = catalog['NUMBER']
+        obj_str['number'] = np.arange(catalog.size)+1
         obj_str['box_size'] = self._calculate_box_size(catalog['KRON_RADIUS'])
         obj_str['ra'] = catalog['ALPHAWIN_J2000']
         obj_str['dec'] = catalog['DELTAWIN_J2000']
@@ -390,7 +449,7 @@ class BITMeasurement():
         return obj_str
 
 
-    def run(self,outfile = "superbit.meds",clobber=False):
+    def run(self,outfile = "superbit.meds",clobber=False, source_selection = False):
         # Make a MEDS, clobbering if needed
 
         # Set up the paths to the science and calibration data.
@@ -405,7 +464,7 @@ class BITMeasurement():
         # NB: can also read in a pre-existing mask by setting self.mask_file
         self.make_mask(overwrite=clobber)
         # Combine images, make a catalog.
-        self.make_catalog()
+        self.make_catalog(source_selection=source_selection)
         # Build a PSF model for each image.
         self.make_psf_models()
         # Make the image_info struct.
