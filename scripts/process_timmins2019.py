@@ -36,7 +36,7 @@ try:
     obj_info = bm.make_object_info_struct()
     """
     bm.run(clobber=False,source_selection = True)
-    
+
 except:
     thingtype, value, tb = sys.exc_info()
     traceback.print_exc()

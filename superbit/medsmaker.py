@@ -63,6 +63,15 @@ class BITMeasurement():
         else:
             self.calib_path = path
 
+    def set_psf_dir(self,path=None):
+        if path is None:
+            self.psf_path = './tmp/psfex_output'
+            if not os.path.exists(self.psf_path):
+                os.mkdir(self.psf_path)
+        else:
+            self.psf_path = path
+
+
     def set_path_to_science_data(self,path=None):
         if path is None:
             self.science_path = '../Data/timmins2019/raw'
@@ -266,9 +275,9 @@ class BITMeasurement():
         self.catalog = self.catalog[keep.nonzero()[0]]
 
         print("Also selecting on SNR_WIN>10 and SExtractor flags <17...")
-        keep2 = (self.catalog['SNR_WIN']>=10) & (self.catalog['FLAGS']<17)
+        keep2 = (self.catalog['SNR_WIN']>=10) & (self.catalog['SNR_WIN']<=150) & (self.catalog['CLASS_STAR']<=0.8) & (self.catalog['FLAGS']<17)
         self.catalog = self.catalog[keep2.nonzero()[0]]
-        
+
         # Also write trimmed catalog to file
         cmd = 'mv coadd_catalog.fits coadd_catalog_full.fits'
         os.system(cmd)
@@ -309,19 +318,20 @@ class BITMeasurement():
     def make_psf_models(self):
 
         self.psfEx_models = []
-        psfex_out_dir = os.path.join(self.work_path,'psfex_output')
-        if not os.path.exists(psfex_out_dir):
-            cmd=' '.join(['mkdir',psfex_out_dir])
         for imagefile in self.image_files:
             #update as necessary
             weightfile=self.mask_file
             psfex_model_file = self._make_psf_model(imagefile,weightfile = weightfile)
+            # move checkimages to psfex_output
+            cmd = ' '.join(['mv chi* resi* samp* snap* proto*',self.psf_path])
+            os.system(cmd)
+
             try:
                 self.psfEx_models.append(psfex.PSFEx(psfex_model_file))
             except:
                 pdb.set_trace()
 
-    def _make_psf_model(self,imagefile,weightfile = 'weight.fits',sextractor_config_path = '../superbit/astro_config/',psfex_out_dir='./'):
+    def _make_psf_model(self,imagefile,weightfile = 'weight.fits',sextractor_config_path = '../superbit/astro_config/',psfex_out_dir='./tmp/'):
         '''
         Gets called by make_psf_models for every image in self.image_files
         Wrapper for PSFEx. Requires a FITS-LDAC format catalog with vignettes
@@ -342,10 +352,11 @@ class BITMeasurement():
 
         # Now run PSFEx on that image and accompanying catalog
         psfex_config_arg = '-c '+sextractor_config_path+'psfex.config'
-        cmd = ' '.join(['psfex', psfcat_name,psfex_config_arg,'-PSFVAR_DEGREES','5'])
+        # Will need to make that tmp/psfex_output generalizable
+        cmd = ' '.join(['psfex', psfcat_name,psfex_config_arg,'-PSFVAR_DEGREES','5','-PSF_DIR', self.psf_path])
         print("psfex cmd is " + cmd)
         os.system(cmd)
-        psfex_model_file=imcat_ldac_name.replace('.ldac','.psf')
+        psfex_model_file=(imcat_ldac_name.replace('.ldac','.psf')).replace('./tmp',self.psf_path)
         # Just return name, the make_psf_models method reads it in as a PSFEx object
         return psfex_model_file
 
@@ -454,7 +465,8 @@ class BITMeasurement():
 
         # Set up the paths to the science and calibration data.
         self.set_working_dir()
-        #self.set_path_to_calib_data()
+        self.set_psf_dir()
+
         #self.set_path_to_science_data()
         # Add a WCS to the science
         #self.add_wcs_to_science_frames()

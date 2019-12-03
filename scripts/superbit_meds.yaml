@@ -112,7 +112,7 @@ mof:
     psf:
         ntry: 4
 
-        model: 'em3'
+        model: 'em5' # Expectations Maximization; em3 means 3 Gaussian models
 
         em_pars:
             maxiter: 2000
