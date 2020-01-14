@@ -14,7 +14,7 @@ if not os.path.exists('../Data/calib'):
     os.mkdir('../Data/calib')
 
 # This is picking out only Luminance images
-science = glob.glob('/Users/jemcclea/Research/SuperBIT_2019/superbit-ngmix/WCS_images/image*_???_WCS.fits')
+science = glob.glob('/Users/jemcclea/Research/Superbit_2019/A2218/Clean/*_WCS.fits')
 flats = glob.glob('/Users/jemcclea/Research/SuperBIT_2019/A2218/FlatImages/*')
 biases = glob.glob('/Users/jemcclea/Research/SuperBIT_2019/A2218/BiasImages/*')
 darks = glob.glob('/Users/jemcclea/Research/SuperBIT_2019/A2218/DarkImages/*')

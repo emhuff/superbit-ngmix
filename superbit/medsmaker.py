@@ -139,20 +139,24 @@ class BITMeasurement():
                 fixed_image_files.append(fixed_image_file)
         self.image_files = fixed_image_files
 
-    def reduce(self,overwrite=False):
+    def reduce(self,overwrite=False,skip_sci_reduce=False):
         # Read in and average together the bias, dark, and flat frames.
-        bname = os.path.join(self.work_path,'master_bias_median.fits')
+       
+        bname = os.path.join(self.work_path,'master_bias_mean.fits')
+        """
         if (not os.path.exists(bname) or (overwrite==True)):
             # Taking median biases and darks instead of mean to eliminate odd noise features
             bias_array=[]
+            print("I get to bias_array")
             for ibias_file in self.bias_files:
                 bias_frame = fitsio.read(ibias_file)
                 bias_array.append(bias_frame)
                 master_bias = np.median(bias_array,axis=0)
                 fitsio.write(os.path.join(self.work_path,'master_bias_median.fits'),master_bias,clobber=True)
         else:
-            master_bias = fitsio.read(bname)
-
+        """
+        master_bias = fitsio.read(bname)
+      
         dname = os.path.join(self.work_path,'master_dark_median.fits')
         if (not os.path.exists(dname) or (overwrite==True)):
             dark_array=[]
@@ -181,22 +185,24 @@ class BITMeasurement():
                 fitsio.write(os.path.join(self.work_path,'master_flat_median.fits'),master_flat,clobber=True)
         else:
             master_flat=fitsio.read(fname)
-
-        reduced_image_files=[]
-        for this_image_file in self.image_files:
-            # WARNING: as written, function assumes science data is in 0th extension
-            this_image_fits=fits.open(this_image_file)
-            time=this_image_fits[0].header['EXPTIME']/1000.
-            this_reduced_image = (this_image_fits[0].data - master_bias)-(master_dark*time)
-            this_reduced_image = this_reduced_image/master_flat
-            updated_header = this_image_fits[0].header
-            updated_header['HISTORY']='File has been bias & dark subtracted and FF corrected'
-            this_image_outname=(os.path.basename(this_image_file)).replace(".fits","_reduced.fits")
-            this_image_outname = os.path.join(self.work_path,this_image_outname)
-            reduced_image_files.append(this_image_outname)
-            this_outfits=fits.PrimaryHDU(this_reduced_image,header=updated_header)
-            this_outfits.writeto(this_image_outname,overwrite=True)
-        self.image_files=reduced_image_files
+        if not skip_sci_reduce: 
+            reduced_image_files=[]
+            for this_image_file in self.image_files:
+                # WARNING: as written, function assumes science data is in 0th extension
+                this_image_fits=fits.open(this_image_file)
+                time=this_image_fits[0].header['EXPTIME']/1000.
+                this_reduced_image = (this_image_fits[0].data - master_bias)-(master_dark*time)
+                this_reduced_image = this_reduced_image/master_flat
+                updated_header = this_image_fits[0].header
+                updated_header['HISTORY']='File has been bias & dark subtracted and FF corrected'
+                this_image_outname=(os.path.basename(this_image_file)).replace(".fits","_reduced.fits")
+                this_image_outname = os.path.join(self.work_path,this_image_outname)
+                reduced_image_files.append(this_image_outname)
+                this_outfits=fits.PrimaryHDU(this_reduced_image,header=updated_header)
+                this_outfits.writeto(this_image_outname,overwrite=True)
+            self.image_files=reduced_image_files
+        else:
+            pass
 
 
     def make_mask(self, global_dark_thresh = 10, global_flat_thresh = 0.85,overwrite=False):
@@ -279,10 +285,10 @@ class BITMeasurement():
         self.catalog = self.catalog[keep2.nonzero()[0]]
 
         # Also write trimmed catalog to file
-        cmd = 'mv coadd_catalog.fits coadd_catalog_full.fits'
+        cmd = 'mv A2218_coadd_catalog.fits A2218_coadd_catalog_full.fits'
         os.system(cmd)
         fullcat[2].data = self.catalog
-        fullcat.writeto('coadd_catalog.fits',overwrite=True)
+        fullcat.writeto('A2218_coadd_catalog.fits',overwrite=True)
 
     def select_sources_from_gaia():
         # Use some set of criteria to choose sources for measurement.
@@ -297,7 +303,8 @@ class BITMeasurement():
         Wrapper for astromatic tools to make catalog from provided images.
         This returns catalog for (stacked) detection image
         '''
-        detection_file, weight_file= self._make_detection_image(outfile_name='A2218_coadd.fits',weightout_name='A2218_coadd.weight.fits')
+        #detection_file, weight_file= self._make_detection_image(outfile_name='A2218_coadd.fits',weightout_name='A2218_coadd.weight.fits')
+        detection_file='./tmp/A2218_coadd.fits'; weight_file='./tmp/A2218_coadd.weight.fits'
         # Now for the million args...
         config_arg = sextractor_config_path+'sextractor.config'
         param_arg = '-PARAMETERS_NAME '+sextractor_config_path+'sextractor.param'
@@ -307,7 +314,7 @@ class BITMeasurement():
         print("sex cmd is " + cmd)
         os.system(cmd)
         try:
-            le_cat = fits.open('coadd_catalog.fits')
+            le_cat = fits.open('A2218_coadd_catalog.fits')
             self.catalog = le_cat[2].data
             if source_selection is True:
                 self.select_sources_from_catalog(fullcat=le_cat)
@@ -356,7 +363,9 @@ class BITMeasurement():
         cmd = ' '.join(['psfex', psfcat_name,psfex_config_arg,'-PSFVAR_DEGREES','5','-PSF_DIR', self.psf_path])
         print("psfex cmd is " + cmd)
         os.system(cmd)
-        psfex_model_file=(imcat_ldac_name.replace('.ldac','.psf')).replace('./tmp',self.psf_path)
+        psfex_name_tmp1=(imcat_ldac_name.replace('.ldac','.psf'))
+        psfex_name_tmp2= psfex_name_tmp1.split('/')[-1]
+        psfex_model_file='/'.join([self.psf_path,psfex_name_tmp2])
         # Just return name, the make_psf_models method reads it in as a PSFEx object
         return psfex_model_file
 
@@ -460,7 +469,7 @@ class BITMeasurement():
         return obj_str
 
 
-    def run(self,outfile = "superbit.meds",clobber=False, source_selection = False):
+    def run(self,outfile = "superbit.meds",clobber=True, source_selection = False):
         # Make a MEDS, clobbering if needed
 
         # Set up the paths to the science and calibration data.
@@ -471,7 +480,7 @@ class BITMeasurement():
         # Add a WCS to the science
         #self.add_wcs_to_science_frames()
         # Reduce the data.
-        self.reduce(overwrite=clobber)
+        self.reduce(overwrite=clobber,skip_sci_reduce=True)
         # Make a mask.
         # NB: can also read in a pre-existing mask by setting self.mask_file
         self.make_mask(overwrite=clobber)
