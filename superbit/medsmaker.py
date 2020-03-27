@@ -40,12 +40,14 @@ class BITMeasurement():
         :image_files: Python List of image filenames; must be complete relative or absolute path.
         :flat_files: Python List of image filenames; must be complete relative or absolute path.
         :dark_files: Python List of image filenames; must be complete relative or absolute path.
+        :catalog: Object that stores FITS array of catalog
         '''
 
         self.image_files = image_files
         self.flat_files = flat_files
         self.dark_files = dark_files
         self.bias_files = bias_files
+        self.catalog = None
 
     def set_working_dir(self,path=None):
         if path is None:
@@ -63,14 +65,15 @@ class BITMeasurement():
         else:
             self.calib_path = path
 
-    def set_psf_dir(self,path=None):
+    def set_path_to_psf(self,path=None):
         if path is None:
             self.psf_path = './tmp/psfex_output'
             if not os.path.exists(self.psf_path):
                 os.mkdir(self.psf_path)
         else:
             self.psf_path = path
-
+            if not os.path.exists(self.psf_path):
+                os.mkdir(self.psf_path)
 
     def set_path_to_science_data(self,path=None):
         if path is None:
@@ -141,7 +144,7 @@ class BITMeasurement():
 
     def reduce(self,overwrite=False,skip_sci_reduce=False):
         # Read in and average together the bias, dark, and flat frames.
-       
+
         bname = os.path.join(self.work_path,'master_bias_mean.fits')
         """
         if (not os.path.exists(bname) or (overwrite==True)):
@@ -156,7 +159,7 @@ class BITMeasurement():
         else:
         """
         master_bias = fitsio.read(bname)
-      
+
         dname = os.path.join(self.work_path,'master_dark_median.fits')
         if (not os.path.exists(dname) or (overwrite==True)):
             dark_array=[]
@@ -185,7 +188,7 @@ class BITMeasurement():
                 fitsio.write(os.path.join(self.work_path,'master_flat_median.fits'),master_flat,clobber=True)
         else:
             master_flat=fitsio.read(fname)
-        if not skip_sci_reduce: 
+        if not skip_sci_reduce:
             reduced_image_files=[]
             for this_image_file in self.image_files:
                 # WARNING: as written, function assumes science data is in 0th extension
@@ -275,21 +278,22 @@ class BITMeasurement():
         os.system(cmd)
         return detection_file,weight_file
 
-    def select_sources_from_catalog(self,fullcat,min_size = 3.5,max_size=10.0,size_key='FLUX_RADIUS'):
+    def _select_sources_from_catalog(self,fullcat,catname='catalog.ldac',min_size = 3.5,max_size=15.0,size_key='FLUX_RADIUS'):
         # Choose sources based on quality cuts on this catalog.
         keep = (self.catalog[size_key] > min_size) & (self.catalog[size_key] < max_size)
         self.catalog = self.catalog[keep.nonzero()[0]]
-
+        
         print("Also selecting on SNR_WIN>10 and SExtractor flags <17...")
         keep2 = (self.catalog['SNR_WIN']>=10) & (self.catalog['SNR_WIN']<=150) & (self.catalog['CLASS_STAR']<=0.8) & (self.catalog['FLAGS']<17)
         self.catalog = self.catalog[keep2.nonzero()[0]]
-
+        
         # Also write trimmed catalog to file
-        cmd = 'mv A2218_coadd_catalog.fits A2218_coadd_catalog_full.fits'
+        fullcat_name=catname.replace('.fits','full.fits')
+        cmd =  ' '.join(['mv',catname,fullcat_name])
         os.system(cmd)
         fullcat[2].data = self.catalog
-        fullcat.writeto('A2218_coadd_catalog.fits',overwrite=True)
-
+        fullcat.writeto(catname,overwrite=True)
+        
     def select_sources_from_gaia():
         # Use some set of criteria to choose sources for measurement.
 
@@ -303,32 +307,38 @@ class BITMeasurement():
         Wrapper for astromatic tools to make catalog from provided images.
         This returns catalog for (stacked) detection image
         '''
-        #detection_file, weight_file= self._make_detection_image(outfile_name='A2218_coadd.fits',weightout_name='A2218_coadd.weight.fits')
-        detection_file='./tmp/A2218_coadd.fits'; weight_file='./tmp/A2218_coadd.weight.fits'
-        # Now for the million args...
+        outfile_name='mock_empirical_psf_coadd.fits'; weightout_name='mock_empirical_psf_coadd.weight.fits'
+        detection_file, weight_file= self._make_detection_image(outfile_name=outfile_name,weightout_name=weightout_name)
+        #detection_file='./tmp/A2218_coadd.fits'; weight_file='./tmp/A2218_coadd.weight.fits'
+        
+        cat_name=detection_file.replace('.fits','_cat.ldac')
+        name_arg='-CATALOG_NAME ' + cat_name
+        weight_arg = '-WEIGHT_IMAGE '+weight_file
         config_arg = sextractor_config_path+'sextractor.config'
         param_arg = '-PARAMETERS_NAME '+sextractor_config_path+'sextractor.param'
         nnw_arg = '-STARNNW_NAME '+sextractor_config_path+'default.nnw'
         filter_arg = '-FILTER_NAME '+sextractor_config_path+'default.conv'
-        cmd = ' '.join(['sex',detection_file,'-WEIGHT_IMAGE',weight_file,param_arg,nnw_arg,filter_arg,'-c',config_arg])
+        cmd = ' '.join(['sex',detection_file,weight_arg,name_arg, param_arg,nnw_arg,filter_arg,'-c',config_arg])
         print("sex cmd is " + cmd)
         os.system(cmd)
         try:
-            le_cat = fits.open('A2218_coadd_catalog.fits')
+            #le_cat = fits.open('A2218_coadd_catalog.fits')
+            le_cat = fits.open(cat_name)
             self.catalog = le_cat[2].data
             if source_selection is True:
-                self.select_sources_from_catalog(fullcat=le_cat)
+                print("I get here")
+                self._select_sources_from_catalog(fullcat=le_cat,catname=cat_name)
         except:
             print("coadd catalog could not be loaded; check name?")
             pdb.set_trace()
 
-    def make_psf_models(self):
+    def make_psf_models(self,gaia_select=False):
 
         self.psfEx_models = []
         for imagefile in self.image_files:
             #update as necessary
             weightfile=self.mask_file
-            psfex_model_file = self._make_psf_model(imagefile,weightfile = weightfile)
+            psfex_model_file = self._make_psf_model(imagefile,weightfile = weightfile,gaia_select=gaia_select)
             # move checkimages to psfex_output
             cmd = ' '.join(['mv chi* resi* samp* snap* proto*',self.psf_path])
             os.system(cmd)
@@ -338,7 +348,7 @@ class BITMeasurement():
             except:
                 pdb.set_trace()
 
-    def _make_psf_model(self,imagefile,weightfile = 'weight.fits',sextractor_config_path = '../superbit/astro_config/',psfex_out_dir='./tmp/'):
+    def _make_psf_model(self,imagefile,weightfile = 'weight.fits',sextractor_config_path = '../superbit/astro_config/',psfex_out_dir='./tmp/',gaia_select=False):
         '''
         Gets called by make_psf_models for every image in self.image_files
         Wrapper for PSFEx. Requires a FITS-LDAC format catalog with vignettes
@@ -350,13 +360,17 @@ class BITMeasurement():
         sextractor_nnw_arg = '-STARNNW_NAME '+sextractor_config_path+'default.nnw'
         sextractor_filter_arg = '-FILTER_NAME '+sextractor_config_path+'default.conv'
         imcat_ldac_name=imagefile.replace('.fits','_cat.ldac')
-        cmd = ' '.join(['sex',imagefile,'-WEIGHT_IMAGE',weightfile,'-c',sextractor_config_file,'-CATALOG_NAME ',imcat_ldac_name,sextractor_param_arg,sextractor_nnw_arg,sextractor_filter_arg])
+        cmd = ' '.join(['sex',imagefile,'-WEIGHT_IMAGE',weightfile,'-c',sextractor_config_file,'-CATALOG_NAME ',
+                            imcat_ldac_name,sextractor_param_arg,sextractor_nnw_arg,sextractor_filter_arg])
         print("sex4psf cmd is " + cmd)
         os.system(cmd)
 
         # Get a "clean" star catalog for PSFEx input
-        psfcat_name = self._select_stars_for_psf(sscat=imcat_ldac_name,imfile=imagefile)
-
+        if gaia_select==True:
+            psfcat_name = self._select_stars_for_psf(sscat=imcat_ldac_name,imfile=imagefile)
+        else:
+            psfcat_name=imcat_ldac_name
+            
         # Now run PSFEx on that image and accompanying catalog
         psfex_config_arg = '-c '+sextractor_config_path+'psfex.config'
         # Will need to make that tmp/psfex_output generalizable
@@ -469,25 +483,25 @@ class BITMeasurement():
         return obj_str
 
 
-    def run(self,outfile = "superbit.meds",clobber=True, source_selection = False):
+    def run(self,outfile = "mock_superbit.meds",clobber=True, source_selection = False,select_from_gaia=False):
         # Make a MEDS, clobbering if needed
 
-        # Set up the paths to the science and calibration data.
-        self.set_working_dir()
-        self.set_psf_dir()
+        # Set up the paths to the science and calibration data --> should probably be done outside here
+        #self.set_working_dir()
+        #self.set_path_to_psf()
 
         #self.set_path_to_science_data()
         # Add a WCS to the science
         #self.add_wcs_to_science_frames()
         # Reduce the data.
-        self.reduce(overwrite=clobber,skip_sci_reduce=True)
+        # self.reduce(overwrite=clobber,skip_sci_reduce=True)
         # Make a mask.
         # NB: can also read in a pre-existing mask by setting self.mask_file
         self.make_mask(overwrite=clobber)
         # Combine images, make a catalog.
         self.make_catalog(source_selection=source_selection)
         # Build a PSF model for each image.
-        self.make_psf_models()
+        self.make_psf_models(gaia_select=select_from_gaia)
         # Make the image_info struct.
         image_info = self.make_image_info_struct()
         # Make the object_info struct.
@@ -499,3 +513,5 @@ class BITMeasurement():
         # Finally, make and write the MEDS file.
         medsObj = meds.maker.MEDSMaker(obj_info,image_info,config=meds_config,psf_data = self.psfEx_models,meta_data=meta)
         medsObj.write(outfile)
+
+        
