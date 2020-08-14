@@ -280,18 +280,19 @@ class BITMeasurement():
         os.system(cmd)
         return detection_file,weight_file
 
-    def _select_sources_from_catalog(self,fullcat,catname='catalog.ldac',min_size = 2.8,max_size=15.0,size_key='FLUX_RADIUS'):
+    def _select_sources_from_catalog(self,fullcat,catname='catalog.ldac',min_size =1.0,max_size=14.0,size_key='KRON_RADIUS'):
         # Choose sources based on quality cuts on this catalog.
         keep = (self.catalog[size_key] > min_size) & (self.catalog[size_key] < max_size)
         self.catalog = self.catalog[keep.nonzero()[0]]
         
-        print("Also selecting on SNR_WIN>5 and SExtractor flags <17...") # Adapt based on needs of data
+        print("Also selecting on FWHM...") # Adapt based on needs of data
         #keep2 = (self.catalog['SNR_WIN']>=10) & (self.catalog['SNR_WIN']<=150) & (self.catalog['CLASS_STAR']<=0.8) & (self.catalog['FLAGS']<17)
-        keep2 = (self.catalog['SNR_WIN']>=5) & (self.catalog['SNR_WIN']<=150) & (self.catalog['CLASS_STAR']<=0.7) & (self.catalog['FLAGS']<17)
+        #keep2 = (self.catalog['SNR_WIN']>=5) & (self.catalog['SNR_WIN']<=150) & (self.catalog['CLASS_STAR']<=0.7) & (self.catalog['FLAGS']<17)
+        keep2 = (self.catalog['FWHM_IMAGE']>2.375) 
         self.catalog = self.catalog[keep2.nonzero()[0]]
         
         # Also write trimmed catalog to file
-        fullcat_name=catname.replace('.fits','full.fits')
+        fullcat_name=catname.replace('.ldac','_full.ldac')
         cmd =  ' '.join(['mv',catname,fullcat_name])
         os.system(cmd)
         fullcat[2].data = self.catalog
@@ -311,7 +312,7 @@ class BITMeasurement():
         This returns catalog for (stacked) detection image
         '''
         #outfile_name='mock_empirical_psf_coadd.fits'; weightout_name='mock_empirical_psf_coadd.weight.fits'
-        outfile_name='mock_empirical_debug_coadd.fits'; weightout_name='mock_empirical_debug_coadd.weight.fits'
+        outfile_name='mock_shear_debug_coadd.fits'; weightout_name='mock_shear_debug_coadd.weight.fits'
         detection_file, weight_file= self._make_detection_image(outfile_name=outfile_name,weightout_name=weightout_name)
         #detection_file='./tmp/A2218_coadd.fits'; weight_file='./tmp/A2218_coadd.weight.fits'
         
@@ -322,7 +323,9 @@ class BITMeasurement():
         param_arg = '-PARAMETERS_NAME '+sextractor_config_path+'sextractor.param'
         nnw_arg = '-STARNNW_NAME '+sextractor_config_path+'default.nnw'
         filter_arg = '-FILTER_NAME '+sextractor_config_path+'default.conv'
-        cmd = ' '.join(['sex',detection_file,weight_arg,name_arg, param_arg,nnw_arg,filter_arg,'-c',config_arg])
+        bkgname=detection_file.replace('.fits','.sub.fits')
+        bkg_arg = '-CHECKIMAGE_NAME ' + bkgname
+        cmd = ' '.join(['sex',detection_file,weight_arg,name_arg, bkg_arg, param_arg,nnw_arg,filter_arg,'-c',config_arg])
         print("sex cmd is " + cmd)
         os.system(cmd)
         try:
@@ -376,10 +379,10 @@ class BITMeasurement():
             psfcat_name=imcat_ldac_name
             
         # Now run PSFEx on that image and accompanying catalog
-        psfex_config_arg = '-c '+sextractor_config_path+'psfex.config'
+        psfex_config_arg = '-c '+sextractor_config_path+'psfex.debug.config'
         # Will need to make that tmp/psfex_output generalizable
         outcat_name = imagefile.replace('.fits','.star')
-        cmd = ' '.join(['psfex', psfcat_name,psfex_config_arg,'-OUTCAT_NAME', outcat_name, '-PSFVAR_DEGREES','5','-PSF_DIR', self.psf_path])
+        cmd = ' '.join(['psfex', psfcat_name,psfex_config_arg,'-OUTCAT_NAME', outcat_name, '-PSFVAR_DEGREES','3','-PSF_DIR', self.psf_path])
         print("psfex cmd is " + cmd)
         os.system(cmd)
         psfex_name_tmp1=(imcat_ldac_name.replace('.ldac','.psf'))
@@ -416,6 +419,11 @@ class BITMeasurement():
         # max_len_of_filepath may cause issues down the line if the file path
         # is particularly long
 
+        pdb.set_trace()
+        """
+        bkgname=detection_file.replace('.fits','.sub.fits')
+        bkg_arg = '-CHECKIMAGE_NAME ' + bkgname
+        """
         image_info = meds.util.get_image_info_struct(len(self.image_files),max_len_of_filepath)
 
         i=0
@@ -478,6 +486,7 @@ class BITMeasurement():
         if catalog is None:
             catalog = self.catalog
 
+        
         obj_str = meds.util.get_meds_input_struct(catalog.size,extra_fields = [('KRON_RADIUS',np.float),('number',np.int)])
         obj_str['id'] = catalog['NUMBER']
         obj_str['number'] = np.arange(catalog.size)+1
@@ -485,6 +494,8 @@ class BITMeasurement():
         obj_str['ra'] = catalog['ALPHAWIN_J2000']
         obj_str['dec'] = catalog['DELTAWIN_J2000']
         obj_str['KRON_RADIUS'] = catalog['KRON_RADIUS']
+       
+        
         return obj_str
 
 
