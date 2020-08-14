@@ -323,7 +323,7 @@ class BITMeasurement():
         param_arg = '-PARAMETERS_NAME '+sextractor_config_path+'sextractor.param'
         nnw_arg = '-STARNNW_NAME '+sextractor_config_path+'default.nnw'
         filter_arg = '-FILTER_NAME '+sextractor_config_path+'default.conv'
-        bkgname=detection_file.replace('.fits','.sub.fits')
+        bkgname=outfile_name.replace('.fits','.sub.fits')
         bkg_arg = '-CHECKIMAGE_NAME ' + bkgname
         cmd = ' '.join(['sex',detection_file,weight_arg,name_arg, bkg_arg, param_arg,nnw_arg,filter_arg,'-c',config_arg])
         print("sex cmd is " + cmd)
@@ -367,8 +367,12 @@ class BITMeasurement():
         sextractor_nnw_arg = '-STARNNW_NAME '+sextractor_config_path+'default.nnw'
         sextractor_filter_arg = '-FILTER_NAME '+sextractor_config_path+'default.conv'
         imcat_ldac_name=imagefile.replace('.fits','_cat.ldac')
+
+        bkgname=imagefile.replace('.fits','.sub.fits')
+        bkg_arg = '-CHECKIMAGE_NAME ' + bkgname
+
         cmd = ' '.join(['sex',imagefile,'-WEIGHT_IMAGE',weightfile,'-c',sextractor_config_file,'-CATALOG_NAME ',
-                            imcat_ldac_name, sextractor_param_arg,sextractor_nnw_arg,sextractor_filter_arg])
+                            imcat_ldac_name, bkg_arg, sextractor_param_arg,sextractor_nnw_arg,sextractor_filter_arg])
         print("sex4psf cmd is " + cmd)
         os.system(cmd)
 
@@ -419,16 +423,13 @@ class BITMeasurement():
         # max_len_of_filepath may cause issues down the line if the file path
         # is particularly long
 
-        pdb.set_trace()
-        """
-        bkgname=detection_file.replace('.fits','.sub.fits')
-        bkg_arg = '-CHECKIMAGE_NAME ' + bkgname
-        """
         image_info = meds.util.get_image_info_struct(len(self.image_files),max_len_of_filepath)
 
         i=0
         for image_file in self.image_files:
-            image_info[i]['image_path'] = image_file
+            bkgsub_name=image_file.replace('.fits','.sub.fits')
+
+            image_info[i]['image_path'] = bkgsub_name
             image_info[i]['image_ext'] = 0
             #image_info[i]['weight_path'] = self.weight_file
             # FOR NOW:

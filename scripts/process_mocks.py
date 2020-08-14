@@ -22,8 +22,8 @@ try:
     # The path names should be updated; as written the code also expects all
     # calibration files to be in the same directory
     
-    bm.set_working_dir(path='/Users/jemcclea/Research/SuperBIT/superbit-ngmix/scripts/debug-bkgSub-5e14')
-    bm.set_path_to_psf(path='/Users/jemcclea/Research/SuperBIT/superbit-ngmix/scripts/debug-bkgSub-5e14/psfex_output')
+    bm.set_working_dir(path='/Users/jemcclea/Research/SuperBIT/superbit-ngmix/scripts/debug-bkg-5e14')
+    bm.set_path_to_psf(path='/Users/jemcclea/Research/SuperBIT/superbit-ngmix/scripts/debug-bkg-5e14/psfex_output')
 
     """
     bm.make_mask(overwrite=False)
@@ -44,7 +44,7 @@ try:
     medsObj = meds.maker.MEDSMaker(obj_info,image_info,config=meds_config,psf_data = bm.psfEx_models,meta_data=meta)
 
     """
-    bm.run(clobber=False,source_selection = True, select_from_gaia=False,outfile = "/Users/jemcclea/Research/SuperBIT/superbit-ngmix/scripts/debug-bkgSub2/debug-bkgSub-5e14.meds")
+    bm.run(clobber=False,source_selection = True, select_from_gaia=False,outfile = "/Users/jemcclea/Research/SuperBIT/superbit-ngmix/scripts/debug-bkg-5e14/debug-bkg-5e14.meds")
 
 except:
     thingtype, value, tb = sys.exc_info()
