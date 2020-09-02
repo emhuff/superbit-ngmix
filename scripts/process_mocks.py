@@ -6,14 +6,14 @@ import esutil as eu
 # Get the location of the main superbit package.
 dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0,dir)
-from superbit import medsmaker
+from superbit import medsmaker_mocks as medsmaker
 
 # Start by making a directory...
 if not os.path.exists('../Data/calib'):
     os.mkdir('../Data/')
     os.mkdir('../Data/calib')
 
-science = glob.glob('/Users/jemcclea/Research/GalSim/examples/output/mockSuperbit_empiricalPSF_???_?.fits')
+science = glob.glob('/Users/jemcclea/Research/GalSim/examples/output/mock_superbit_superbitimage_kernel_24753000?.fits')
 flats = glob.glob('/Users/jemcclea/Research/SuperBIT_2019/A2218/FlatImages/*')
 biases = glob.glob('/Users/jemcclea/Research/SuperBIT_2019/A2218/BiasImages/*')
 darks = glob.glob('/Users/jemcclea/Research/SuperBIT_2019/A2218/DarkImages/*')
@@ -34,10 +34,10 @@ try:
     image_info = bm.make_image_info_struct()
     obj_info = bm.make_object_info_struct()
     """
-    bm.set_working_dir(path='/Users/jemcclea/Research/SuperBIT/superbit-ngmix/scripts/output-empirical')
-    bm.set_path_to_psf(path='/Users/jemcclea/Research/SuperBIT/superbit-ngmix/scripts/output-empirical/psfex_output')
+    bm.set_working_dir(path='/Users/jemcclea/Research/SuperBIT/superbit-ngmix/scripts/output-mock')
+    bm.set_path_to_psf(path='/Users/jemcclea/Research/SuperBIT/superbit-ngmix/scripts/output-mock/psfex_output')
 
-    bm.run(clobber=False,source_selection = True, select_from_gaia=False,outfile = "/Users/jemcclea/Research/SuperBIT/superbit-ngmix/scripts/output_empirical/empirical-psf.meds")
+    bm.run(clobber=False,source_selection = True, select_stars=True,outfile = "/Users/jemcclea/Research/SuperBIT/superbit-ngmix/scripts/output-mock/mock_superbit.meds")
 
 except:
     thingtype, value, tb = sys.exc_info()

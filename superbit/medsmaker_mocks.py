@@ -9,7 +9,7 @@ import pdb
 from astropy import wcs
 import fitsio
 import esutil as eu
-
+from astropy.table import Table
 import astropy.units as u
 import astropy.coordinates
 from astroquery.gaia import Gaia
@@ -280,31 +280,32 @@ class BITMeasurement():
         os.system(cmd)
         return detection_file,weight_file
 
-    def _select_sources_from_catalog(self,fullcat,catname='catalog.ldac',min_size =2.8,max_size=16.0,size_key='KRON_RADIUS'):
+    def _select_sources_from_catalog(self,fullcat,catname='catalog.ldac',min_size =1,max_size=16.0,size_key='KRON_RADIUS'):
         # Choose sources based on quality cuts on this catalog.
         keep = (self.catalog[size_key] > min_size) & (self.catalog[size_key] < max_size) 
         self.catalog = self.catalog[keep.nonzero()[0]]
         
-        print("Also selecting on FWHM...") # Adapt based on needs of data
-        keep2 = (self.catalog['SNR_WIN']>=5) & (self.catalog['SNR_WIN']<=150) & (self.catalog['CLASS_STAR']<=0.65) & (self.catalog['FLAGS']<17)
-        #keep2 = (self.catalog['FWHM_IMAGE']>2.95) 
+        print("Selecting analysis objects on FWHM and CLASS_STAR...") # Adapt based on needs of data
+        keep2 = (self.catalog['FWHM_IMAGE']>1.5) & (self.catalog['CLASS_STAR']<=0.8) & (self.catalog['MAG_AUTO']>16.5)
         self.catalog = self.catalog[keep2.nonzero()[0]]
 
         # This is really really bad practice... but don't know how else to automatically de-select stars
         # Also, 90% sure this will introduce a bias into metacal results
+        """
         real_clean=self.catalog[self.catalog['FWHM_IMAGE']>3.5]
         gals=real_clean[(real_clean['FWHM_IMAGE']>= (real_clean['MAG_AUTO']*-8.98 + 187)) & (real_clean['FLUX_RADIUS']>2.7)
                           & (real_clean['MAG_AUTO']<30)]
 
         self.catalog=gals
-        # Also write trimmed catalog to file
+        """
+        # Write trimmed catalog to file
         fullcat_name=catname.replace('.ldac','_full.ldac')
         cmd =  ' '.join(['mv',catname,fullcat_name])
         os.system(cmd)
-        
+       
         # "fullcat" is now actually the filtered-out analysis catalog
-        #fullcat[2].data = self.catalog
-        fullcat[2].data = gals
+        fullcat[2].data = self.catalog
+        #fullcat[2].data = gals
         
         fullcat.writeto(catname,overwrite=True)
         
@@ -349,13 +350,13 @@ class BITMeasurement():
             print("coadd catalog could not be loaded; check name?")
             pdb.set_trace()
 
-    def make_psf_models(self,gaia_select=False):
+    def make_psf_models(self,select_stars=False):
 
         self.psfEx_models = []
         for imagefile in self.image_files:
             #update as necessary
             weightfile=self.mask_file
-            psfex_model_file = self._make_psf_model(imagefile,weightfile = weightfile,gaia_select=gaia_select)
+            psfex_model_file = self._make_psf_model(imagefile,weightfile = weightfile,select_stars=select_stars)
             # move checkimages to psfex_output
             cmd = ' '.join(['mv chi* resi* samp* snap* proto*',self.psf_path])
             os.system(cmd)
@@ -365,7 +366,7 @@ class BITMeasurement():
             except:
                 pdb.set_trace()
 
-    def _make_psf_model(self,imagefile,weightfile = 'weight.fits',sextractor_config_path = '../superbit/astro_config/',psfex_out_dir='./tmp/',gaia_select=False):
+    def _make_psf_model(self,imagefile,weightfile = 'weight.fits',sextractor_config_path = '../superbit/astro_config/',psfex_out_dir='./tmp/',select_stars=False):
         '''
         Gets called by make_psf_models for every image in self.image_files
         Wrapper for PSFEx. Requires a FITS-LDAC format catalog with vignettes
@@ -382,49 +383,61 @@ class BITMeasurement():
         bkg_arg = '-CHECKIMAGE_NAME ' + bkgname
 
         cmd = ' '.join(['sex',imagefile,'-WEIGHT_IMAGE',weightfile,'-c',sextractor_config_file,'-CATALOG_NAME ',
-                            imcat_ldac_name, bkg_arg, sextractor_param_arg,sextractor_nnw_arg,sextractor_filter_arg])
+                            imcat_ldac_name, bkg_arg, sextractor_param_arg,sextractor_nnw_arg,
+                            sextractor_filter_arg])
         print("sex4psf cmd is " + cmd)
         os.system(cmd)
 
         # Get a "clean" star catalog for PSFEx input
-        if gaia_select==True:
-            psfcat_name = self._select_stars_for_psf(sscat=imcat_ldac_name,imfile=imagefile)
+        # At some point, make truthfilen a command line argument
+        if select_stars==True:
+            
+            truthdir = '/Users/jemcclea/Research/GalSim/examples/output'
+            truthcat = 'truth_superbitimage_kernel_247530003.dat'
+            truthfilen=os.path.join(truthdir,truthcat)           
+            print("using truth catalog %s" % truthfilen)
+            psfcat_name = self._select_stars_for_psf(sscat=imcat_ldac_name,truthfile=truthfilen)
+            
         else:
             psfcat_name=imcat_ldac_name
             
         # Now run PSFEx on that image and accompanying catalog
         psfex_config_arg = '-c '+sextractor_config_path+'psfex.config'
         # Will need to make that tmp/psfex_output generalizable
-        outcat_name = imagefile.replace('.fits','.star')
-        cmd = ' '.join(['psfex', psfcat_name,psfex_config_arg,'-OUTCAT_NAME', outcat_name, '-PSFVAR_DEGREES','3','-PSF_DIR', self.psf_path])
+        outcat_name = imagefile.replace('.fits','.psfex.star')
+        cmd = ' '.join(['psfex', psfcat_name,psfex_config_arg,'-OUTCAT_NAME',
+                            outcat_name, '-PSFVAR_DEGREES','3','-PSF_DIR', self.psf_path])
         print("psfex cmd is " + cmd)
         os.system(cmd)
         psfex_name_tmp1=(imcat_ldac_name.replace('.ldac','.psf'))
         psfex_name_tmp2= psfex_name_tmp1.split('/')[-1]
         psfex_model_file='/'.join([self.psf_path,psfex_name_tmp2])
+
         # Just return name, the make_psf_models method reads it in as a PSFEx object
         return psfex_model_file
+    
 
-    def _select_stars_for_psf(self,sscat,imfile):
+    def _select_stars_for_psf(self,sscat,truthfile):
         '''
-        method to obtain stars from SExtractor catalog by comparing to GAIA
+        Method to obtain stars from SExtractor catalog using the truth catalog from GalSim 
             sscat : input ldac-format catalog from which to select stars
-            imfile : image file on which sscat is based; needed for header's CRVAL kw
+            truthcat : the simulation truth catalog written out by GalSim
+                      
         '''
-        # Read in header, get catalog of GAIA sources that overlap the field, ish.
+        
+        # Read in truthfile, obtain stars with redshift cut
+        truthcat = Table.read(truthfile,format='ascii')
+        stars=truthcat[truthcat['redshift']==0] 
 
-        hdr = fits.getheader(imfile)
-        coord = astropy.coordinates.SkyCoord(hdr['CRVAL1'],hdr['CRVAL2'],unit='deg')
-        result = Gaia.cone_search_async(coord,radius=14*u.arcminute)
-        catalog = result.get_data()
-        catalog_wg = catalog[catalog['parallax'] >= catalog['parallax_error']]
-        # get RA/Dec of input catalog, cross-match against GAIA
+        # match sscat against truth star catalog
         ss = fits.open(sscat)
-        sexmatcher = eu.htm.Matcher(16, ra=ss[2].data['ALPHAWIN_J2000'], dec = ss[2].data['DELTAWIN_J2000'])
-        gaia_matches, sexmatches, dist = sexmatcher.match(catalog_wg['ra'],catalog_wg['dec'],radius = 6E-4,maxmatch=1)
+        star_matcher = eu.htm.Matcher(16,ra=stars['ra'],dec=stars['dec'])
+        ssmatches,starmatches,dist = star_matcher.match(ra=ss[2].data['ALPHAWIN_J2000'],
+                                                            dec=ss[2].data['DELTAWIN_J2000'],radius=6E-4,maxmatch=1)
+        
         # Save result to file, return filename
         outname = sscat.replace('.ldac','.star')
-        ss[2].data=ss[2].data[sexmatches]
+        ss[2].data=ss[2].data[ssmatches]
         ss.writeto(outname,overwrite=True)
 
         return outname
@@ -510,7 +523,7 @@ class BITMeasurement():
         return obj_str
 
 
-    def run(self,outfile = "mock_superbit.meds",clobber=True, source_selection = False,select_from_gaia=False):
+    def run(self,outfile = "mock_superbit.meds",clobber=True, source_selection=False, select_stars=False):
         # Make a MEDS, clobbering if needed
 
         #### ONLY FOR DEBUG
@@ -530,7 +543,7 @@ class BITMeasurement():
         # Combine images, make a catalog.
         self.make_catalog(source_selection=source_selection)
         # Build a PSF model for each image.
-        self.make_psf_models(gaia_select=select_from_gaia)
+        self.make_psf_models(select_stars=select_stars)
         # Make the image_info struct.
         image_info = self.make_image_info_struct()
         # Make the object_info struct.
