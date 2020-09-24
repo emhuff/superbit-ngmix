@@ -51,7 +51,7 @@ class BITMeasurement():
         self.psf_path = None
         self.work_path = None
         self.mask_path = './mask_files'
-
+        
     def set_working_dir(self,path=None):
         if path is None:
             self.work_path = './tmp'
@@ -239,7 +239,6 @@ class BITMeasurement():
             outfile = fits.PrimaryHDU(darkmask.reshape(np.shape(mdark)))
             outfile.writeto(os.path.join(self.mask_path,'darkmask.fits'),overwrite=True)
 
-
             # repeat for flat
             med_flat_array=[]
             flattened=np.ravel(mflat)
@@ -254,12 +253,10 @@ class BITMeasurement():
             outfile = fits.PrimaryHDU(flatmask.reshape(np.shape(mflat)))
             outfile.writeto(os.path.join(self.mask_path,'flatmask.fits'),overwrite=True)
 
-
             # Now generate actual mask
             supermask = (darkmask + flatmask)/2.
             outfile = fits.PrimaryHDU(flatmask.reshape(np.shape(mflat)))
             outfile.writeto(os.path.join(self.mask_path,'supermask.fits'),overwrite=True)
-
 
         else:
             pass
@@ -290,18 +287,9 @@ class BITMeasurement():
         self.catalog = self.catalog[keep.nonzero()[0]]
         
         print("Selecting analysis objects on FWHM and CLASS_STAR...") # Adapt based on needs of data; FWHM~8 for empirical!
-        keep2 = (self.catalog['FWHM_IMAGE']>1.5) & (self.catalog['CLASS_STAR']<=0.8) & (self.catalog['MAG_AUTO']>16.5)
+        keep2 = (self.catalog['FWHM_IMAGE']>3.4) & (self.catalog['CLASS_STAR']<=0.8) & (self.catalog['MAG_AUTO']>16.5)
         self.catalog = self.catalog[keep2.nonzero()[0]]
 
-        # This is really really bad practice... do for debug only, as 
-        # this may introduce a bias into metacal results
-        """
-        real_clean=self.catalog[self.catalog['FWHM_IMAGE']>3.5]
-        gals=real_clean[(real_clean['FWHM_IMAGE']>= (real_clean['MAG_AUTO']*-8.98 + 187)) & (real_clean['FLUX_RADIUS']>2.7)
-                          & (real_clean['MAG_AUTO']<30)]
-
-        self.catalog=gals
-        """
         # Write trimmed catalog to file
         fullcat_name=catname.replace('.ldac','_full.ldac')
         cmd =  ' '.join(['mv',catname,fullcat_name])
@@ -329,13 +317,11 @@ class BITMeasurement():
         #outfile_name='mock_empirical_psf_coadd.fits'; weightout_name='mock_empirical_psf_coadd.weight.fits'
         outfile_name='mock_coadd.fits'; weightout_name='mock_coadd.weight.fits'
         detection_file, weight_file= self._make_detection_image(outfile_name=outfile_name,weightout_name=weightout_name)
-
         
         cat_name=detection_file.replace('.fits','_cat.ldac')
         name_arg='-CATALOG_NAME ' + cat_name
         weight_arg = '-WEIGHT_IMAGE '+weight_file
         #config_arg = sextractor_config_path+'sextractor.empirical.config'
-
         config_arg = sextractor_config_path+'sextractor.config'
         param_arg = '-PARAMETERS_NAME '+sextractor_config_path+'sextractor.param'
         nnw_arg = '-STARNNW_NAME '+sextractor_config_path+'default.nnw'
@@ -382,7 +368,6 @@ class BITMeasurement():
 
         sextractor_config_file = sextractor_config_path+'sextractor.config'
         #sextractor_config_file = sextractor_config_path+'sextractor.empirical.config'
-
         sextractor_param_arg = '-PARAMETERS_NAME '+sextractor_config_path+'sextractor.param'
         sextractor_nnw_arg = '-STARNNW_NAME '+sextractor_config_path+'default.nnw'
         sextractor_filter_arg = '-FILTER_NAME '+sextractor_config_path+'default.conv'
@@ -403,7 +388,6 @@ class BITMeasurement():
             
             truthdir = '/Users/jemcclea/Research/GalSim/examples/output'
             truthcat = 'truth_flight_jitter_only_oversampled_1x300002.dat'
-
             truthfilen=os.path.join(truthdir,truthcat)           
             print("using truth catalog %s" % truthfilen)
             psfcat_name = self._select_stars_for_psf(sscat=imcat_ldac_name,truthfile=truthfilen)
@@ -414,7 +398,6 @@ class BITMeasurement():
         # Now run PSFEx on that image and accompanying catalog
         psfex_config_arg = '-c '+sextractor_config_path+'psfex.config'
         #psfex_config_arg = '-c '+sextractor_config_path+'psfex.empirical.config'
-
         # Will need to make that tmp/psfex_output generalizable
         outcat_name = imagefile.replace('.fits','.psfex.star')
         cmd = ' '.join(['psfex', psfcat_name,psfex_config_arg,'-OUTCAT_NAME',
