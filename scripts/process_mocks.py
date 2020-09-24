@@ -13,7 +13,8 @@ if not os.path.exists('../Data/calib'):
     os.mkdir('../Data/')
     os.mkdir('../Data/calib')
 
-science = glob.glob('/Users/jemcclea/Research/GalSim/examples/output/mock_superBIT_gaussianJitter300_?.fits')
+
+science = glob.glob('/Users/jemcclea/Research/GalSim/examples/output/mock_superbit_superbitimage_kernel_24753000?.fits')
 flats = glob.glob('/Users/jemcclea/Research/SuperBIT_2019/A2218/FlatImages/*')
 biases = glob.glob('/Users/jemcclea/Research/SuperBIT_2019/A2218/BiasImages/*')
 darks = glob.glob('/Users/jemcclea/Research/SuperBIT_2019/A2218/DarkImages/*')
@@ -21,6 +22,7 @@ try:
     bm = medsmaker.BITMeasurement(image_files=science)
     # The path names should be updated; as written the code also expects all
     # calibration files to be in the same directory
+
 
     bm.set_working_dir(path='/Users/jemcclea/Research/SuperBIT/superbit-ngmix/scripts/output-jitter')
     bm.set_path_to_psf(path='/Users/jemcclea/Research/SuperBIT/superbit-ngmix/scripts/output-jitter/psfex_output')
