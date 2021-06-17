@@ -218,6 +218,7 @@ class BITMeasurement():
         '''
         self.mask_file = os.path.join(self.mask_path,mask_name)
         print("\nUsing mask %s\n" % str(self.mask_file))
+
         if (not os.path.exists(self.mask_file)) or (overwrite==True):
             # It's bad practice to hard-code filenames in
             mdark_fname = os.path.join(self.mask_path,'master_dark_median.fits')
@@ -282,11 +283,13 @@ class BITMeasurement():
         os.system(cmd)
         return detection_file,weight_file
 
+
     def _select_sources_from_catalog(self,fullcat,catname='catalog.ldac',min_size =2,max_size=24.0,size_key='KRON_RADIUS'):
         # Choose sources based on quality cuts on this catalog.
         keep = (self.catalog[size_key] > min_size) & (self.catalog[size_key] < max_size) 
         self.catalog = self.catalog[keep.nonzero()[0]]
         
+
         print("Selecting analysis objects on CLASS_STAR...") # Adapt based on needs of data; FWHM~8 for empirical!
         keep2 = self.catalog['CLASS_STAR']<=0.9
         self.catalog = self.catalog[keep2.nonzero()[0]]

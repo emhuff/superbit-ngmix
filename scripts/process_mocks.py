@@ -20,6 +20,7 @@ clobber=False
 source_selection=True
 select_stars = False
 outfile = "/users/jmcclear/data/superbit/superbit-ngmix/scripts/forecasting/newshape/newshape_forecast.meds"
+
 try:
     
     bm = medsmaker.BITMeasurement(image_files=science)
