@@ -7,38 +7,53 @@ import esutil as eu
 dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0,dir)
 from superbit import medsmaker_mocks as medsmaker
+import meds
 
 # Start by making a directory...
-if not os.path.exists('../Data/calib'):
-    os.mkdir('../Data/')
-    os.mkdir('../Data/calib')
 
-science = glob.glob('/Users/jemcclea/Research/GalSim/examples/output/mock_superbit_superbitimage_kernel_24753000?.fits')
-flats = glob.glob('/Users/jemcclea/Research/SuperBIT_2019/A2218/FlatImages/*')
-biases = glob.glob('/Users/jemcclea/Research/SuperBIT_2019/A2218/BiasImages/*')
-darks = glob.glob('/Users/jemcclea/Research/SuperBIT_2019/A2218/DarkImages/*')
+# workaround to get either one or two hours' worth of exposures
+science = glob.glob('/users/jmcclear/data/superbit/superbit-metacal/GalSim/forecasting/newshape/round?/superbit_gaussJitter_00?.fits')
+#science2 = glob.glob('/users/jmcclear/data/superbit/superbit-metacal/GalSim/output-partial/round[1-6]/mock_superbit_flight_jitter_only_oversampled_1x300.000[1-3].fits')
+#science.extend(science2)
+
+clobber=False
+source_selection=True
+select_stars = False
+outfile = "/users/jmcclear/data/superbit/superbit-ngmix/scripts/forecasting/newshape/newshape_forecast.meds"
 try:
+    
     bm = medsmaker.BITMeasurement(image_files=science)
-    # The path names should be updated; as written the code also expects all
-    # calibration files to be in the same directory
 
-    """
-    bm.set_working_dir()
-    bm.set_path_to_calib_data(path='/Users/jemcclea/Research/SuperBIT/A2218/')
-    bm.set_path_to_science_data(path='/Users/jemcclea/Research/SuperBIT/A2218/ScienceImages/')
-    bm.reduce(overwrite=False)
-    bm.make_mask(overwrite=False)
-    bm.make_catalog(source_selection = True)
+    bm.set_working_dir(path='/users/jmcclear/data/superbit/superbit-ngmix/scripts/forecasting/newshape/')
+    bm.set_path_to_psf(path='/users/jmcclear/data/superbit/superbit-ngmix/scripts/forecasting/newshape/psfex_output')
 
-    bm.make_psf_models()
+    # Make a mask.                                                                                                                                   
+    bm.make_mask(overwrite=clobber,mask_name='forecast_weight.fits')
+ 
+    # Combine images, make a catalog.                                                                                                                
+    bm.make_catalog(source_selection=source_selection)
+    
+    # Build a PSF model for each image.                                                                                                              
+    bm.make_psf_models(select_stars=select_stars)
+    
+    # Make the image_info struct.                                                                                                                    
     image_info = bm.make_image_info_struct()
+    
+    # Make the object_info struct.                                                                                                                   
     obj_info = bm.make_object_info_struct()
+    
+    # Make the MEDS config file.                                                                                                                     
+    meds_config = bm.make_meds_config()
+    
+    # Create metadata for MEDS                                                                                                                       
+    meta = bm._meds_metadata(magzp=30.0)
+    # Finally, make and write the MEDS file.                                                                                                         
+    
+    medsObj = meds.maker.MEDSMaker(obj_info,image_info,config=meds_config,psf_data = bm.psfEx_models,meta_data=meta)
+    medsObj.write(outfile)
     """
-    bm.set_working_dir(path='/Users/jemcclea/Research/SuperBIT/superbit-ngmix/scripts/output-mock')
-    bm.set_path_to_psf(path='/Users/jemcclea/Research/SuperBIT/superbit-ngmix/scripts/output-mock/psfex_output')
-
-    bm.run(clobber=False,source_selection = True, select_stars=True,outfile = "/Users/jemcclea/Research/SuperBIT/superbit-ngmix/scripts/output-mock/mock_superbit.meds")
-
+    bm.run(clobber=clobber,source_selection = source_selection, select_stars = select_stars, outfile = outfile)
+    """    
 except:
     thingtype, value, tb = sys.exc_info()
     traceback.print_exc()
