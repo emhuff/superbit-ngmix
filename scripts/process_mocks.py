@@ -3,30 +3,29 @@ import importlib.util
 import glob
 import pdb, traceback
 import esutil as eu
-# Get the location of the main superbit package.
+## Get the location of the main superbit package.
 dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0,dir)
 from superbit import medsmaker_mocks as medsmaker
 import meds
 
-# Start by making a directory...
-
-# workaround to get either one or two hours' worth of exposures
-science = glob.glob('/users/jmcclear/data/superbit/superbit-metacal/GalSim/forecasting/newshape/round?/superbit_gaussJitter_00?.fits')
-#science2 = glob.glob('/users/jmcclear/data/superbit/superbit-metacal/GalSim/output-partial/round[1-6]/mock_superbit_flight_jitter_only_oversampled_1x300.000[1-3].fits')
+## Get either one or two hours' worth of exposures
+science = glob.glob('/users/jmcclear/data/superbit/superbit-metacal/GalSim/forecasting/cluster5/nobkg_newshape/round*/superbit_gaussJitter_00?.fits') 
 #science.extend(science2)
 
+## clobber is currently only called by make_mask()
+ 
 clobber=False
 source_selection=True
 select_stars = False
-outfile = "/users/jmcclear/data/superbit/superbit-ngmix/scripts/forecasting/newshape/newshape_forecast.meds"
+outfile = "/users/jmcclear/data/superbit/superbit-ngmix/scripts/forecasting/cluster5/nobkg/cluster5_newshape.meds"
 
 try:
     
     bm = medsmaker.BITMeasurement(image_files=science)
 
-    bm.set_working_dir(path='/users/jmcclear/data/superbit/superbit-ngmix/scripts/forecasting/newshape/')
-    bm.set_path_to_psf(path='/users/jmcclear/data/superbit/superbit-ngmix/scripts/forecasting/newshape/psfex_output')
+    bm.set_working_dir(path='/users/jmcclear/data/superbit/superbit-ngmix/scripts/forecasting/cluster5/nobkg')
+    bm.set_path_to_psf(path='/users/jmcclear/data/superbit/superbit-ngmix/scripts/forecasting/cluster5/nobkg/psfex_output')
 
     # Make a mask.                                                                                                                                   
     bm.make_mask(overwrite=clobber,mask_name='forecast_weight.fits')

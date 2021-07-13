@@ -402,7 +402,7 @@ class BITMeasurement():
         # Will need to make that tmp/psfex_output generalizable
         outcat_name = imagefile.replace('.fits','.psfex.star')
         cmd = ' '.join(['psfex', psfcat_name,psfex_config_arg,'-OUTCAT_NAME',
-                            outcat_name, '-PSFVAR_DEGREES','3','-PSF_DIR', self.psf_path])
+                            outcat_name, '-PSFVAR_DEGREES','2','-PSF_DIR', self.psf_path])
         print("psfex cmd is " + cmd)
         os.system(cmd)
         psfex_name_tmp1=(imcat_ldac_name.replace('.ldac','.psf'))
